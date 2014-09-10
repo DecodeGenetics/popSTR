@@ -20,7 +20,7 @@ struct STRinfo {
     int STRstart;
     int STRend;
     Dna5String motif;
-    double refRepeatNum; //Number of repeats in reference sequence 
+    float refRepeatNum; //Number of repeats in reference sequence 
     Dna5String refBf;
     Dna5String refAf;
     Dna5String refRepSeq;
@@ -32,7 +32,7 @@ struct STRinfoSmall {
     int STRstart;
     int STRend;
     Dna5String motif;
-    double refRepeatNum; //Number of repeats in reference sequence 
+    float refRepeatNum; //Number of repeats in reference sequence 
     Dna5String refRepSeq;
 } ;
 
@@ -46,8 +46,8 @@ bool operator<(const STRinfoSmall & Left, const STRinfoSmall & Right)
 struct ReadInfo {
     int STRend;
     Dna5String motif;
-    double refRepeatNum; //Number of repeats in reference sequence 
-    double numOfRepeats;
+    float refRepeatNum; //Number of repeats in reference sequence 
+    float numOfRepeats;
     float ratioBf; 
     float ratioAf; 
     unsigned locationShift; 
@@ -63,7 +63,7 @@ struct ReadInfo {
 
 //structure to store read information
 struct ReadPairInfo {
-    double numOfRepeats;
+    float numOfRepeats;
     float ratioBf; 
     float ratioAf; 
     unsigned locationShift; 
@@ -110,7 +110,7 @@ std::set<Dna5String> createPermutations(Dna5String motif)
 }
 
 //Primitive pattern search, just searches for first and last occurence of #repeats*motif without considering what's between them
-Pair<Pair<int>, double> findPatternPrim(Dna5String pattern, Dna5String readSequence, int motifLength)
+Pair<Pair<int>, float> findPatternPrim(Dna5String pattern, Dna5String readSequence, int motifLength)
 {
     unsigned patternLength = length(pattern);
     std::set<Dna5String> permutations = createPermutations(pattern);
@@ -144,7 +144,7 @@ Pair<Pair<int>, double> findPatternPrim(Dna5String pattern, Dna5String readSeque
                 index = index + 1;
         }
     }
-    double numOfRepeats = (float)(endCoordinate-startCoordinate)/motifLength;
+    float numOfRepeats = (float)(endCoordinate-startCoordinate)/(float)motifLength;
     return Pair<Pair<int>, int>(Pair<int>(startCoordinate,endCoordinate), numOfRepeats);
 }
 
@@ -225,7 +225,7 @@ Pair<Pair<int>, int> findPattern(Dna5String pattern, Dna5String readSequence, in
 float getPurity(Dna5String motif, Dna5String STRsequence)
 {
     unsigned motifLength = length(motif);
-    double expectReps = (float)length(STRsequence)/(float)motifLength;
+    float expectReps = (float)length(STRsequence)/(float)motifLength;
     unsigned result = 0;
     unsigned index = 0;
     while(index < length(STRsequence))
@@ -284,7 +284,7 @@ int getTagValue(BamAlignmentRecord record, CharString tagName)
 }
 
 //Computes all sorts of quality indicators for the given read w.r.t. the given microsatellite 
-Pair<Pair<Pair<CharString>,int>,ReadInfo> computeReadInfo(BamAlignmentRecord record, STRinfo markerInfo, Pair<Pair<int>, double> coordinates, int minFlank)
+Pair<Pair<Pair<CharString>,int>,ReadInfo> computeReadInfo(BamAlignmentRecord record, STRinfo markerInfo, Pair<Pair<int>, float> coordinates, int minFlank)
 {
     //Type definition for alignment structure
     typedef Dna5String TSequence;              
@@ -315,7 +315,7 @@ Pair<Pair<Pair<CharString>,int>,ReadInfo> computeReadInfo(BamAlignmentRecord rec
     mapValue.refRepeatNum = markerInfo.refRepeatNum;
     mapValue.refRepSeq = markerInfo.refRepSeq;
     
-    //Identify part of read before the repeat
+    //Split read into 2 parts, both containing the alleged repeat
     before = prefix(record.seq, coordinates.i1.i2+1);
     after = suffix(record.seq, coordinates.i1.i1);
     
@@ -347,6 +347,9 @@ Pair<Pair<Pair<CharString>,int>,ReadInfo> computeReadInfo(BamAlignmentRecord rec
         cout << "Infix command is: infix(" << coordinates.i1.i1+1 << "," << oldStartCoord+coordinates.i1.i2+1 << ")" << endl; 
         repeatRegion = infix(record.seq, coordinates.i1.i1, oldStartCoord+coordinates.i1.i2+1);
         mapValue.numOfRepeats = (float)length(repeatRegion)/(float)length(markerInfo.motif);
+        //If I find less repeats than the required minimum (depending on the motif length) then I don't use the read
+        if (ceil(mapValue.numOfRepeats) < repeatNumbers[length(markerInfo.motif)])
+            mapValue.numOfRepeats = 666;
         mapValue.ratioOver20In = findRatioOver20(infix(qualString, coordinates.i1.i1, oldStartCoord+coordinates.i1.i2+1));
         mapValue.ratioOver20After = findRatioOver20(suffix(suffix(qualString, oldStartCoord),coordinates.i1.i2+1));
         mapValue.purity = getPurity(markerInfo.motif,repeatRegion);
@@ -407,16 +410,15 @@ int main(int argc, char const ** argv)
         return 1;
     }
     
-    //Create output streams and write PN-id to attribute output
-    ofstream outputFile;
-    outputFile.open(argv[3], ios_base::app);
-    ofstream initialLabels;
-    initialLabels.open(argv[6], ios_base::app); 
+    //Create output streams
+    ofstream outputFile(argv[3]);
+    //outputFile.open(argv[3], ios_base::app);
+    ofstream initialLabels(argv[6]);
+    //initialLabels.open(argv[6], ios_base::app); 
     CharString PN_ID = prefix(suffix(argv[1],length(argv[1])-11),7);
     
     //min-flanking area
     int minFlank = lexicalCast<int>(argv[5]);
-    unsigned eliminatedMarkers = 0;
     
     //To store marker info
     String<STRinfo> markers;
@@ -435,9 +437,6 @@ int main(int argc, char const ** argv)
         string motifString;
         markerFile >> motifString;
         currInfo.motif = motifString;
-        double refRepeatNum;
-        markerFile >> refRepeatNum;
-        currInfo.refRepeatNum = refRepeatNum;
         string refBfString;
         markerFile >> refBfString;
         currInfo.refBf = refBfString;
@@ -447,17 +446,10 @@ int main(int argc, char const ** argv)
         string refRepSeq;
         markerFile >> refRepSeq;
         currInfo.refRepSeq = refRepSeq;
+        currInfo.refRepeatNum = (float)refRepSeq.length()/(float)motifString.length();
         if (currInfo.STRend - currInfo.STRstart < 151 - 2*minFlank)
             appendValue(markers, currInfo);
-        else
-            ++eliminatedMarkers;
     }
-    
-    //Debugging code
-    /*cout << eliminatedMarkers << " markers were too wide to use." << endl;
-    cout << length(markers) << " markers had satisfactory dimensions." << endl;
-    cout << "Chromosome of first marker: " << markers[0].chrom << endl;
-    */
     
     //Set up how many repeats I require for each motif length
     repeatNumbers[2]=4;
@@ -509,8 +501,6 @@ int main(int argc, char const ** argv)
         return 1;
     }
     
-    //cout << "The rId is set as: " << rID << endl;
-    
     //Jump to beginning of chromosome, put 100000000 as end to make sure I find alignments.
     bool hasAlignments = false;
     if (!jumpToRegion(inStream, hasAlignments, context, rID, 0, 100000000, baiIndex))
@@ -531,7 +521,6 @@ int main(int argc, char const ** argv)
     unsigned markerIndex = 0;
     BamAlignmentRecord record;
     unsigned numToLook;
-    unsigned wasUnaligned = 0;
     while (!atEnd(inStream))
     {
         if (readRecord(record, context, inStream, Bam()) != 0)
@@ -577,7 +566,7 @@ int main(int argc, char const ** argv)
             // Does the read intersect the microsatellite without being unaligned? -> Then I look for the current repeat motif   
             if (((bamStart >= markers[currentMarker].STRstart && bamStart <= markers[currentMarker].STRend)||(bamStart < markers[currentMarker].STRstart && bamEnd >= markers[currentMarker].STRstart)) && !hasFlagUnmapped(record))
             {
-                Pair<Pair<int>, double> coordinates = findPatternPrim(repeat(markers[currentMarker].motif,numToLook), record.seq, length(markers[currentMarker].motif));
+                Pair<Pair<int>, float> coordinates = findPatternPrim(repeat(markers[currentMarker].motif,numToLook), record.seq, length(markers[currentMarker].motif));
                 int startCoordinate = coordinates.i1.i1;
                 int endCoordinate = coordinates.i1.i2;
                 //Does the read contain all of the microsatellite and flanking regions larger than the set minimum? -> Then I compute read attributes
@@ -639,7 +628,7 @@ int main(int argc, char const ** argv)
                 //Or, is the read itself unaligned -> Then I look for the current repeat motif
                 if (hasFlagUnmapped(record))
                 {
-                    Pair<Pair<int>, double> coordinates = findPatternPrim(repeat(markers[currentMarker].motif,numToLook), record.seq, length(markers[currentMarker].motif));
+                    Pair<Pair<int>, float> coordinates = findPatternPrim(repeat(markers[currentMarker].motif,numToLook), record.seq, length(markers[currentMarker].motif));
                     int startCoordinate = coordinates.i1.i1;
                     int endCoordinate = coordinates.i1.i2;
                     //Does the read contain all of the microsatellite and flanking regions larger than the set minimum? -> Then I compute read attributes
@@ -702,29 +691,31 @@ int main(int argc, char const ** argv)
         //Put the lime in the coconut 
         appendValue(finalMap[currentSTR], currentReadPair);
     }
+    
     //Set for storing allele-types and vector for storing reported alleles, count occurences in vector for all elements in set to get frequency of each allele
-    std::set<double> presentAlleles; 
-    vector<double> allAlleles;
+    std::set<float> presentAlleles; 
+    vector<float> allAlleles;
     int winnerFreq, secondFreq, currentFreq;
-    double winner, second;
+    float winner, second;
     //Loop over map of markers and look at all reads for each of them
     map<STRinfoSmall, String<ReadPairInfo> >::const_iterator ite2 = finalMap.end();
-    outputFile << PN_ID << endl;
+    if (finalMap.size() > 0)
+        outputFile << PN_ID << endl;
     for(map<STRinfoSmall, String<ReadPairInfo> >::iterator it = finalMap.begin(); it != ite2; ++it)
     {
-        outputFile << it->first.chrom << "\t" << it->first.STRstart << "\t" << it->first.STRend << "\t" << it->first.motif << "\t" << it->first.refRepeatNum << "\t" << length(it->second) << "\t" << it->first.refRepSeq << endl;
+        outputFile << it->first.chrom << "\t" << it->first.STRstart << "\t" << it->first.STRend << "\t" << it->first.motif << "\t" << setprecision(2) << it->first.refRepeatNum << "\t" << length(it->second) << "\t" << it->first.refRepSeq << endl;
         for (unsigned i=0; i < length(it->second); ++i)
         {
             ReadPairInfo printMe = it->second[i];
             presentAlleles.insert(printMe.numOfRepeats);
             allAlleles.push_back(printMe.numOfRepeats);
-            outputFile << setprecision(3) << printMe.numOfRepeats << "\t" << setprecision(3) << printMe.ratioBf << "\t" << setprecision(3) << printMe.ratioAf << "\t" << printMe.locationShift << "\t" << printMe.mateEditDist << "\t" << setprecision(3) << printMe.purity << "\t" << setprecision(3) << printMe.ratioOver20In << "\t" << setprecision(3) << printMe.ratioOver20After << "\t" << printMe.sequenceLength << "\t" << printMe.wasUnaligned << "\t" << printMe.repSeq << endl; 
+            outputFile << setprecision(2) << printMe.numOfRepeats << "\t" << setprecision(3) << printMe.ratioBf << "\t" << setprecision(3) << printMe.ratioAf << "\t" << printMe.locationShift << "\t" << printMe.mateEditDist << "\t" << setprecision(3) << printMe.purity << "\t" << setprecision(3) << printMe.ratioOver20In << "\t" << setprecision(3) << printMe.ratioOver20After << "\t" << printMe.sequenceLength << "\t" << printMe.wasUnaligned << "\t" << printMe.repSeq << endl; 
         }
         winnerFreq = 0;
         secondFreq = 0;
         //Loop over set of alleles to consider and count occurences of each to determine initial labelling.
-        std::set<double>::iterator end = presentAlleles.end();
-        for (std::set<double>::iterator allIt = presentAlleles.begin(); allIt!=end; ++allIt)
+        std::set<float>::iterator end = presentAlleles.end();
+        for (std::set<float>::iterator allIt = presentAlleles.begin(); allIt!=end; ++allIt)
         {
             currentFreq = count(allAlleles.begin(), allAlleles.end(), *allIt);
             if ( currentFreq > winnerFreq)
@@ -748,9 +739,9 @@ int main(int argc, char const ** argv)
                 }
             }
         }
-        if (secondFreq < 0.3*winnerFreq)
+        if (secondFreq < 0.15*winnerFreq)
             second = winner;
-        initialLabels << setprecision(3) << winner << "\t" << setprecision(3) << second << endl;
+        initialLabels << setprecision(2) << winner << "\t" << setprecision(2) << second << endl;
         presentAlleles.clear();
         allAlleles.clear();
     }
