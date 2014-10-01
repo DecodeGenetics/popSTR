@@ -344,7 +344,8 @@ Pair<Pair<Pair<CharString>,int>,ReadInfo> computeReadInfo(BamAlignmentRecord rec
         coordinates.i1.i2 = endCoord;
         mapValue.ratioBf = (float)scoreBf/((float)startCoord+1);
         mapValue.ratioAf = (float)scoreAf/(float)(length(after)-endCoord);
-        cout << "Infix command is: infix(" << coordinates.i1.i1+1 << "," << oldStartCoord+coordinates.i1.i2+1 << ")" << endl; 
+        //Debugging code
+        //cout << "Infix command is: infix(" << coordinates.i1.i1+1 << "," << oldStartCoord+coordinates.i1.i2+1 << ")" << endl; 
         repeatRegion = infix(record.seq, coordinates.i1.i1, oldStartCoord+coordinates.i1.i2+1);
         mapValue.numOfRepeats = (float)length(repeatRegion)/(float)length(markerInfo.motif);
         //If I find less repeats than the required minimum (depending on the motif length) then I don't use the read
@@ -362,7 +363,8 @@ Pair<Pair<Pair<CharString>,int>,ReadInfo> computeReadInfo(BamAlignmentRecord rec
         mapValue.ratioBf = 0;
         mapValue.ratioAf = 0;
         mapValue.numOfRepeats = 666;
-        cout << "Infix command is: infix(" << coordinates.i1.i1 << "," << oldStartCoord+coordinates.i1.i2+1 << ")" << endl; 
+        //Debugging code
+        //cout << "Infix command is: infix(" << coordinates.i1.i1 << "," << oldStartCoord+coordinates.i1.i2+1 << ")" << endl; 
         repeatRegion = "NNN";
         mapValue.ratioOver20In = 0;
         mapValue.ratioOver20After = 0;
@@ -371,7 +373,7 @@ Pair<Pair<Pair<CharString>,int>,ReadInfo> computeReadInfo(BamAlignmentRecord rec
     mapValue.repSeq = repeatRegion;
     
     //Debugging code
-    cout << "Motif: " << mapValue.motif << " Start: " << markerInfo.STRstart << endl;
+    /*cout << "Motif: " << mapValue.motif << " Start: " << markerInfo.STRstart << endl;
     cout << "Before: " << prefix(before, coordinates.i1.i1) << endl;
     cout << "Aligned to: " << suffix(source(row(alignBefore,0)),toSourcePosition(row(alignBefore,0),toViewPosition(row(alignBefore,1),0))) << endl;
     cout << "Repeat: " << repeatRegion << endl;
@@ -391,7 +393,7 @@ Pair<Pair<Pair<CharString>,int>,ReadInfo> computeReadInfo(BamAlignmentRecord rec
             cout << "Enough flanking area behind ?" << (length(source(row(alignAfter,1)))-endCoord >= minFlank) << endl;
         }
         cout << "Start and end not overlapping? " << ((startCoord + length(markerInfo.motif)*repeatNumbers[length(markerInfo.motif)])< (startCoord + endCoord)) << endl; 
-    }
+    }*/
     
     TRow &row2B = row(alignBefore,1);
     
@@ -410,12 +412,22 @@ int main(int argc, char const ** argv)
         return 1;
     }
     
-    //Create output streams
-    ofstream outputFile(argv[3]);
-    //outputFile.open(argv[3], ios_base::app);
-    ofstream initialLabels(argv[6]);
-    //initialLabels.open(argv[6], ios_base::app); 
+    //Find and save PN-id
     CharString PN_ID = prefix(suffix(argv[1],length(argv[1])-11),7);
+    
+    //Create output streams
+    CharString attributeDirectory = argv[3];
+    append(attributeDirectory, "/");
+    append(attributeDirectory, PN_ID);
+    append(attributeDirectory, "attributes");
+    ofstream outputFile(toCString(attributeDirectory));
+    //outputFile.open(argv[3], ios_base::app);
+    CharString initialLabelsDirectory = argv[6];
+    append(initialLabelsDirectory, "/");
+    append(initialLabelsDirectory, PN_ID);
+    append(initialLabelsDirectory, "initialLabels");
+    ofstream initialLabels(toCString(initialLabelsDirectory));
+    //initialLabels.open(argv[6], ios_base::app); 
     
     //min-flanking area
     int minFlank = lexicalCast<int>(argv[5]);
@@ -703,13 +715,13 @@ int main(int argc, char const ** argv)
         outputFile << PN_ID << endl;
     for(map<STRinfoSmall, String<ReadPairInfo> >::iterator it = finalMap.begin(); it != ite2; ++it)
     {
-        outputFile << it->first.chrom << "\t" << it->first.STRstart << "\t" << it->first.STRend << "\t" << it->first.motif << "\t" << setprecision(2) << it->first.refRepeatNum << "\t" << length(it->second) << "\t" << it->first.refRepSeq << endl;
+        outputFile << it->first.chrom << "\t" << it->first.STRstart << "\t" << it->first.STRend << "\t" << it->first.motif << "\t" << setprecision(1) << fixed << it->first.refRepeatNum << "\t" << length(it->second) << "\t" << it->first.refRepSeq << endl;
         for (unsigned i=0; i < length(it->second); ++i)
         {
             ReadPairInfo printMe = it->second[i];
             presentAlleles.insert(printMe.numOfRepeats);
             allAlleles.push_back(printMe.numOfRepeats);
-            outputFile << setprecision(2) << printMe.numOfRepeats << "\t" << setprecision(3) << printMe.ratioBf << "\t" << setprecision(3) << printMe.ratioAf << "\t" << printMe.locationShift << "\t" << printMe.mateEditDist << "\t" << setprecision(3) << printMe.purity << "\t" << setprecision(3) << printMe.ratioOver20In << "\t" << setprecision(3) << printMe.ratioOver20After << "\t" << printMe.sequenceLength << "\t" << printMe.wasUnaligned << "\t" << printMe.repSeq << endl; 
+            outputFile << setprecision(1) << fixed << printMe.numOfRepeats << "\t" << setprecision(2) << fixed << printMe.ratioBf << "\t" << setprecision(2) << fixed << printMe.ratioAf << "\t" << printMe.locationShift << "\t" << printMe.mateEditDist << "\t" << setprecision(2) << fixed << printMe.purity << "\t" << setprecision(2) << fixed << printMe.ratioOver20In << "\t" << setprecision(2) << fixed << printMe.ratioOver20After << "\t" << printMe.sequenceLength << "\t" << printMe.wasUnaligned << "\t" << printMe.repSeq << endl; 
         }
         winnerFreq = 0;
         secondFreq = 0;
@@ -741,7 +753,7 @@ int main(int argc, char const ** argv)
         }
         if (secondFreq < 0.15*winnerFreq)
             second = winner;
-        initialLabels << setprecision(2) << winner << "\t" << setprecision(2) << second << endl;
+        initialLabels << setprecision(1) << fixed << winner << "\t" << setprecision(1) << fixed << second << endl;
         presentAlleles.clear();
         allAlleles.clear();
     }
