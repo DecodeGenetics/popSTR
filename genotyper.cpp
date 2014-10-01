@@ -8,22 +8,22 @@
 #include <numeric>
 #include <sstream>
 #include <sys/stat.h>
+#include <boost/math/distributions/poisson.hpp>
 #include <seqan/file.h>
 #include <seqan/find.h>
 #include <seqan/basic.h>
 #include <seqan/vcf_io.h>
 #include <seqan/sequence.h>
-#include "/home/snaedisk/work/liblinear/linear.h"
-#include "/home/snaedisk/work/liblinear/linear.cpp"
-#include "/home/snaedisk/work/liblinear/tron.h"
-#include "/home/snaedisk/work/liblinear/tron.cpp"
-#include "/home/snaedisk/work/liblinear/blas/blas.h"
-#include "/home/snaedisk/work/liblinear/blas/blasp.h"
-#include "/home/snaedisk/work/liblinear/blas/daxpy.c"
-#include "/home/snaedisk/work/liblinear/blas/ddot.c"
-#include "/home/snaedisk/work/liblinear/blas/dnrm2.c"
-#include "/home/snaedisk/work/liblinear/blas/dscal.c"
-#include <boost/math/distributions/poisson.hpp>
+#include <liblinear/linear.h>
+#include <liblinear/linear.cpp>
+#include <liblinear/tron.h>
+#include <liblinear/tron.cpp>
+#include <liblinear/blas/blas.h>
+#include <liblinear/blas/blasp.h>
+#include <liblinear/blas/daxpy.c>
+#include <liblinear/blas/ddot.c>
+#include <liblinear/blas/dnrm2.c>
+#include <liblinear/blas/dscal.c>
 #define Malloc(type,n) (type *)malloc((n)*sizeof(type))
 
 using namespace std;
@@ -380,8 +380,8 @@ VcfRecord fillRecordMarker(Marker marker, std::set<float> allelesAtThisMarker)
     str = ss.str();
     record.ref = str;
     stringClear(ss,str);
-    if (allelesAtThisMarker.size() == 2) 
-        allelesAtThisMarker.insert(150);
+    /*if (allelesAtThisMarker.size() == 2) 
+        allelesAtThisMarker.insert(150);*/
     record.qual = 0; //Which qual goes here, one for each call??
     record.info = "END=";
     ss << marker.end;
@@ -490,35 +490,6 @@ void fillRecordPn(GenotypeInfo genotype, VcfRecord& record, String<Pair<float> >
         }
         eraseBack(gtInfo);
     }
-    /*ss << numberOfReads;
-    str = ss.str();
-    append(gtInfo,str);
-    append(gtInfo,":");
-    stringClear(ss,str);
-    map<float, int>::const_iterator ite = genotype.alleleToFreq.end();
-    for(map<float, int>::const_iterator it = genotype.alleleToFreq.begin(); it != ite; ++it)
-    {
-        ss << it->first;
-        str = ss.str();
-        append(gtInfo,str);
-        append(gtInfo,"|");
-        stringClear(ss,str);
-        ss << it->second;
-        str = ss.str();
-        append(gtInfo,str);
-        append(gtInfo,";");
-        stringClear(ss,str);
-    }
-    eraseBack(gtInfo);
-    append(gtInfo,":");
-    ss << q;
-    str = ss.str();
-    append(gtInfo,str);
-    append(gtInfo,":");
-    stringClear(ss,str);
-    ss << gq;
-    str = ss.str();
-    append(gtInfo,str);*/
     //When the genotype info string is ready I append it to the stringset of charstrings
     appendValue(record.genotypeInfos, gtInfo);
 }
