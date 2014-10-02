@@ -78,13 +78,13 @@ int main(int argc, char const ** argv)
             return 1;
         }
         //Get repeat sequence from reference
-        if (readRegion(refRepSeq, faiIndex, idx, beginPos, endPos) != 0)
+        if (readRegion(refRepSeq, faiIndex, idx, beginPos, endPos+1) != 0)
         {
             cerr << "ERROR: Could not load repeat sequence.\n";
             return 1;
         }
         //Get 1000 bases behind marker from reference
-        if (readRegion(refAf, faiIndex, idx, endPos, min(LengthOfSeq,endPos+1000)) != 0)
+        if (readRegion(refAf, faiIndex, idx, endPos+1, min(LengthOfSeq,endPos+1001)) != 0)
         {
             cerr << "ERROR: Could not load reference after.\n";
             return 1;
