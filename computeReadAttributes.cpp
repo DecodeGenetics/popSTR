@@ -527,7 +527,7 @@ int main(int argc, char const ** argv)
         return 0;
     } 
     
-    //Map from read name and marker chromosome+start to info on read-pair with that read name
+    //Map from read name, marker chromosome and marker start to info on read-pair with that read name
     map<Pair<Pair<CharString>, int>, ReadInfo> myMap;
     //Index into string storing marker information
     unsigned markerIndex = 0;
@@ -673,10 +673,11 @@ int main(int argc, char const ** argv)
             numToLook = repeatNumbers[length(markers[currentMarker].motif)];     
         }
     }
-    map<STRinfoSmall, String<ReadPairInfo> > finalMap;
+    map<STRinfoSmall, String<ReadPairInfo> > finalMap; //Stores String of ReadPairInfo for each marker
     map<Pair<Pair<CharString>, int>, ReadInfo>::const_iterator ite = myMap.end();
     for(map<Pair<Pair<CharString>, int>, ReadInfo>::const_iterator it = myMap.begin(); it != ite; ++it)
     {
+        //If this condition holds then only one member of the read pair has fulfilled the conditions and I can't use the pair.
         if ((it->second.numOfRepeats == 666) || (it->second.mateEditDist == 666))
             continue;
         //Create key     

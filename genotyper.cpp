@@ -117,7 +117,7 @@ void fillProblemX(int idx, AttributeLine currentLine, problem& myProb)
     myProb.x[idx][9].value = 0;    
 }
 
-//Parses one line from output file of computeReadAttributes by filling up and returning an AttributeLine
+//Parses one line from attribute file by filling up and returning an AttributeLine, also initializes markerToSize map using the labels 
 AttributeLine parseNextLine(float winner, float second, ifstream& attributeFile, Marker& marker, string PnId, map<Pair<string,Marker>, GenotypeInfo>& PnAndMarkerToGenotype)
 {
     AttributeLine currentLine;
@@ -638,10 +638,10 @@ int main(int argc, char const ** argv)
     //Map to store a map from alleles to their frequencies in the population for each marker, used for estimating the probability that the distance between alleles at the marker is an integer
     map<Marker, Pair<map<float,int>,int> > markerToAlleleFreqs;
     //In case I never reach PN-slippage convergence I stop after 10 tries.
-    int pnLoops = 0;
+    //int pnLoops = 0;
     //If the PN-slippage rates have changed dramatically I have to repeat the procedure
-    repeat:
-    ++pnLoops;
+    //repeat:
+    //++pnLoops;
     int z = 1;
     double firstPart;
     double secondPart;
@@ -687,7 +687,6 @@ int main(int argc, char const ** argv)
                 finalSub += pnToSize[PnIds[i]].i2*(subtractions[i]/subSum);
             cout << "Number to be subtracted: " << finalSub << " from: " << (markerToSize[it->first].i1.p2.i2+markerToSize[it->first].i1.p3.i2)/(markerToSize[it->first].i1.p1.i2+markerToSize[it->first].i1.p2.i2+markerToSize[it->first].i1.p3.i2) << endl;
             markerToSize[it->first].i2 = std::max((double)0,(markerToSize[it->first].i1.p2.i2+markerToSize[it->first].i1.p3.i2)/(markerToSize[it->first].i1.p1.i2+markerToSize[it->first].i1.p2.i2+markerToSize[it->first].i1.p3.i2) - finalSub);
-            cout << "Marker slippage: " << markerToSize[it->first].i2 << endl;
             subtractions.clear();
             //Reads with label 2 are not included in training
             prob.l = length(currentMarker) - markerToSize[it->first].i1.p2.i1;
@@ -801,18 +800,17 @@ int main(int argc, char const ** argv)
         }
         markerToAlleleFreqs[it->first].i2 = PnsAtMarker;
         PnToAlleles.clear();
-        //mapPerMarker.erase(it->first);
+        cout << "Marker slippage: " << markerToSize[it->first].i2 << endl;
         cout << "Finished marker number: " << z << endl;
         ++z;                 
     }
     
-    Marker currMark;
+    /*Marker currMark;
     double temp;
-    double diffSum;
+    double diffSum = 0;
     //Re-estimate PN-slippage rates according to new genotypes
     for (unsigned i=0; i<length(PnIds); ++i)
-    {
-        diffSum = 0;
+    {        
         std::set<Marker>::iterator itEnd = markers.end();
         for (std::set<Marker>::iterator it = markers.begin(); it != itEnd; ++it)
         {
@@ -839,12 +837,12 @@ int main(int argc, char const ** argv)
         finalSub = 0;
     }
     //If PN-slippage rates have changed too much I repeat the genotyping process
-    if ((double)diffSum/(double)length(PnIds) > 1e-06 && pnLoops < 10)
-        goto repeat;
     cout << "Average squared difference between old and new PN-slippage rate: " << (double)diffSum/(double)length(PnIds) << endl;
+    if ((double)diffSum/(double)length(PnIds) > 1e-06 && pnLoops < 10)
+        goto repeat;  */  
     cout << "Finished determining genotypes" << endl;
     
-    //Here I need code to initialize things common to the vcf files
+    //Here I need code to initialize things for the vcf file
     GenotypeInfo genotype;
     string thisPn;
     Marker thisMarker;
@@ -879,10 +877,11 @@ int main(int argc, char const ** argv)
         //Make a String<Pair<float> > which contains a list of genotypes
         genotypesAtThisMarker = makeGenotypes(allelesAtThisMarker);
         //Compute abs(allele1-allele2)*allele1Freq*allele2Freq for all genotypes and return average of those, estimate of distance between alleles.
-        alleleDistance = computeAlleleDist(genotypesAtThisMarker, markerToAlleleFreqs[thisMarker].i1, pnsAtMarker); 
-        //cout << "Average allele distance for marker: " << alleleDistance << endl;
-        //cout << "PNs at marker: " << pnsAtMarker << endl;
-        //cout << "Alleles at marker: " << allelesAtThisMarker.size() << endl;     
+        alleleDistance = computeAlleleDist(genotypesAtThisMarker, markerToAlleleFreqs[thisMarker].i1, pnsAtMarker);
+        //To make processing of hdf5 file easier I add 150 as a "dummy" allele when population only has 2 alleles (for Agnar)
+        if (allelesAtThisMarker.size() == 2)
+            allelesAtThisMarker.insert(150);
+        genotypesAtThisMarker = makeGenotypes(allelesAtThisMarker); 
         //First fill marker specific fields of vcfRecord
         record = fillRecordMarker(thisMarker, allelesAtThisMarker);       
         //Loop over Pns in inner loop and fill in PN specific fields of vcfRecord for each PN
@@ -921,5 +920,6 @@ int main(int argc, char const ** argv)
         clear(record);
         allelesAtThisMarker.clear();
     }
+    cout << "Finished writing VCF file " << endl;
     return 0;
 }
