@@ -10,6 +10,7 @@
 #include <math.h>
 #include <algorithm>
 #include <fstream>
+#include <sys/stat.h>
 
 using namespace std;
 using namespace seqan;
@@ -406,27 +407,14 @@ Pair<Pair<Pair<CharString>,int>,ReadInfo> computeReadInfo(BamAlignmentRecord rec
 int main(int argc, char const ** argv)
 {   
     //Check arguments.
-    if (argc != 7)
+    if (argc != 6)
     {
-        cerr << "USAGE: " << argv[0] << " IN.bam IN.bam.bai attributeOutputDirectory markerInfoFile minFlankLength initialLabelOutputDirectory\n";
+        cerr << "USAGE: " << argv[0] << " IN.bam IN.bam.bai outputDirectory markerInfoFile minFlankLength\n";
         return 1;
     }
     
     //Find and save PN-id
     CharString PN_ID = prefix(suffix(argv[1],length(argv[1])-11),7);
-    
-    //Create output streams
-    CharString attributeDirectory = argv[3];
-    append(attributeDirectory, "/");
-    append(attributeDirectory, PN_ID);
-    append(attributeDirectory, "attributes");
-    ofstream outputFile(toCString(attributeDirectory));
-    CharString initialLabelsDirectory = argv[6];
-    append(initialLabelsDirectory, "/");
-    append(initialLabelsDirectory, PN_ID);
-    append(initialLabelsDirectory, "initialLabels");
-    ofstream initialLabels(toCString(initialLabelsDirectory));
-    //initialLabels.open(argv[6], ios_base::app); 
     
     //min-flanking area
     int minFlank = lexicalCast<int>(argv[5]);
@@ -461,6 +449,44 @@ int main(int argc, char const ** argv)
         if (currInfo.STRend - currInfo.STRstart < 151 - 2*minFlank)
             appendValue(markers, currInfo);
     }
+    
+    //Create output streams
+    CharString attributeDirectory = argv[3];
+    CharString initialLabelsDirectory = argv[3];
+    append(attributeDirectory, "/attributes/");    
+    append(initialLabelsDirectory, "/initialLabels/");
+    struct stat st;
+    if(stat(toCString(attributeDirectory),&st) != 0)
+        mkdir(toCString(attributeDirectory),0777);
+    struct stat st2;
+    if(stat(toCString(initialLabelsDirectory),&st2) != 0)
+        mkdir(toCString(initialLabelsDirectory),0777);
+    if (length(currInfo.chrom) > 2)
+    {
+        append(attributeDirectory, currInfo.chrom);
+        append(initialLabelsDirectory, currInfo.chrom);
+    }
+    else
+    {
+        append(attributeDirectory, "chr");
+        append(attributeDirectory, currInfo.chrom);
+        append(initialLabelsDirectory, "chr");
+        append(initialLabelsDirectory, currInfo.chrom);
+    }
+    struct stat st3;
+    if(stat(toCString(attributeDirectory),&st3) != 0)
+        mkdir(toCString(attributeDirectory),0777);
+	struct stat st4;
+    if(stat(toCString(initialLabelsDirectory),&st4) != 0)
+        mkdir(toCString(initialLabelsDirectory),0777);
+    append(attributeDirectory, "/");
+	append(initialLabelsDirectory, "/");    
+	append(attributeDirectory, PN_ID);
+	append(initialLabelsDirectory, PN_ID);
+    append(attributeDirectory, "attributes");
+    append(initialLabelsDirectory, "initialLabels");
+    ofstream outputFile(toCString(attributeDirectory));        
+    ofstream initialLabels(toCString(initialLabelsDirectory));
     
     //Set up how many repeats I require for each motif length
     repeatNumbers[2]=4;
