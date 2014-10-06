@@ -142,8 +142,9 @@ AttributeLine parseNextLine(float winner, float second, ifstream& attributeFile,
         currentLine.label = 1;
         ++markerToSize[marker].i1.p1.i1;
         markerToSize[marker].i1.p1.i2 += currentLine.pValue;
-        ++pnToSize[PnId].i1.p1.i1;
-        pnToSize[PnId].i1.p1.i2 += currentLine.pValue;
+        //Don't need to update this map here because I have the initialization of slippage rates from an input file -- Will need later
+        //++pnToSize[PnId].i1.p1.i1;
+        //pnToSize[PnId].i1.p1.i2 += currentLine.pValue;
     }
     else 
     {
@@ -152,16 +153,18 @@ AttributeLine parseNextLine(float winner, float second, ifstream& attributeFile,
             currentLine.label = 2;
             ++markerToSize[marker].i1.p2.i1;
             markerToSize[marker].i1.p2.i2 += currentLine.pValue;
-            ++pnToSize[PnId].i1.p2.i1;
-            pnToSize[PnId].i1.p2.i2 += currentLine.pValue;
+            //Don't need to update this map here because I have the initialization of slippage rates from an input file -- Will need later
+            //++pnToSize[PnId].i1.p2.i1;
+            //pnToSize[PnId].i1.p2.i2 += currentLine.pValue;
         }
         else
         { 
             currentLine.label = -1;
             ++markerToSize[marker].i1.p3.i1;
             markerToSize[marker].i1.p3.i2 += currentLine.pValue;
-            ++pnToSize[PnId].i1.p3.i1;
-            pnToSize[PnId].i1.p3.i2 += currentLine.pValue;
+            //Don't need to update this map here because I have the initialization of slippage rates from an input file -- Will need later
+            //++pnToSize[PnId].i1.p3.i1;
+            //pnToSize[PnId].i1.p3.i2 += currentLine.pValue;
         }
     }
     return currentLine;
@@ -295,8 +298,9 @@ void relabelReads(String<AttributeLine>& readsToRelabel, int start, int end, Pai
             readsToRelabel[i].label = 1;
             ++markerToSize[marker].i1.p1.i1;
             markerToSize[marker].i1.p1.i2 += readsToRelabel[i].pValue;
-            ++pnToSize[readsToRelabel[i].PnId].i1.p1.i1;
-            pnToSize[readsToRelabel[i].PnId].i1.p1.i2 += readsToRelabel[i].pValue;
+            //Don't need to update this map here because I use the initialization of slippage rates from an input file -- Will need later
+            /*++pnToSize[readsToRelabel[i].PnId].i1.p1.i1;
+            pnToSize[readsToRelabel[i].PnId].i1.p1.i2 += readsToRelabel[i].pValue;*/
         }
         else 
         {
@@ -305,16 +309,18 @@ void relabelReads(String<AttributeLine>& readsToRelabel, int start, int end, Pai
                 readsToRelabel[i].label = 2;
                 ++markerToSize[marker].i1.p2.i1;
                 markerToSize[marker].i1.p2.i2 += readsToRelabel[i].pValue;
-                ++pnToSize[readsToRelabel[i].PnId].i1.p2.i1;
-                pnToSize[readsToRelabel[i].PnId].i1.p2.i2 += readsToRelabel[i].pValue;
+                //Don't need to update this map here because I use the initialization of slippage rates from an input file -- Will need later
+                /*++pnToSize[readsToRelabel[i].PnId].i1.p2.i1;
+                pnToSize[readsToRelabel[i].PnId].i1.p2.i2 += readsToRelabel[i].pValue;*/
             }
             else
             { 
                 readsToRelabel[i].label = -1;
                 ++markerToSize[marker].i1.p3.i1;
                 markerToSize[marker].i1.p3.i2 += readsToRelabel[i].pValue;
-                ++pnToSize[readsToRelabel[i].PnId].i1.p3.i1;
-                pnToSize[readsToRelabel[i].PnId].i1.p3.i2 += readsToRelabel[i].pValue;
+                //Don't need to update this map here because I use the initialization of slippage rates from an input file -- Will need later
+                /*++pnToSize[readsToRelabel[i].PnId].i1.p3.i1;
+                pnToSize[readsToRelabel[i].PnId].i1.p3.i2 += readsToRelabel[i].pValue;*/
             }
         }
     }
@@ -380,8 +386,6 @@ VcfRecord fillRecordMarker(Marker marker, std::set<float> allelesAtThisMarker)
     str = ss.str();
     record.ref = str;
     stringClear(ss,str);
-    /*if (allelesAtThisMarker.size() == 2) 
-        allelesAtThisMarker.insert(150);*/
     record.qual = 0; //Which qual goes here, one for each call??
     record.info = "END=";
     ss << marker.end;
@@ -524,16 +528,17 @@ double computeAlleleDist(String<Pair<float> > genotypes, map<float,int> allelesT
 int main(int argc, char const ** argv)
 {   
     //Check arguments.
-    if (argc != 5)
+    if (argc != 6)
     {
-        cerr << "USAGE: " << argv[0] << " attributeFile initialLabellingFile vcfOutputDirectory numOfReadsFile\n";
+        cerr << "USAGE: " << argv[0] << " attributeFile initialLabellingFile PN-slippageFile vcfOutputDirectory numOfReadsFile\n";
         return 1;
     }
     
     //Make input streams for attribute file and initial labelling file 
     ifstream attributeFile(argv[1]);
     ifstream initialLabels(argv[2]);
-    ofstream numOfReadsFile(argv[4]);
+    ifstream pnSlippageFile(argv[3]);
+    ofstream numOfReadsFile(argv[5]);
     
     string PnId, chrom, motif, nextWord, refRepSeq;
     String<string> PnIds;
@@ -541,6 +546,15 @@ int main(int argc, char const ** argv)
     int start, end, numberOfReads;
     float refRepeatNum;
     float winner, second;
+    double currPnSlipp;
+    
+    //Read the slippage rate for all PNs into the pnToSize map 
+    while (!pnSlippageFile.eof())
+    {
+        pnSlippageFile >> PnId;
+        pnSlippageFile >> currPnSlipp;
+        pnToSize[PnId].i2 = currPnSlipp;  
+    }
     
     //Map from marker to all reads covering it 
     map<Marker, String<AttributeLine> > mapPerMarker;
@@ -585,10 +599,10 @@ int main(int argc, char const ** argv)
         attributeFile >> nextWord;
         if (nextWord != chrom)
         {
-            //Set initial value for slippage rate of current PN before updating PnId and reading data for next one.
-            pnToSize[PnId].i2 = (pnToSize[PnId].i1.p2.i2+pnToSize[PnId].i1.p3.i2)/(2.0*(pnToSize[PnId].i1.p1.i2+pnToSize[PnId].i1.p2.i2+pnToSize[PnId].i1.p3.i2));
-            cout << "Initial slippage rate for: " << PnId << " is: " << pnToSize[PnId].i2 << endl;
-            //Nullset labelProps for current PN, they will be "filled up" again when I genotype and then I'll re-estimate the PN-slippage rate.
+            //Set initial value for slippage rate of current PN before updating PnId and reading data for next one -- Temporarily remove this, I now read the PN-slippage rate from an input file            
+            /*pnToSize[PnId].i2 = (pnToSize[PnId].i1.p2.i2+pnToSize[PnId].i1.p3.i2)/(2.0*(pnToSize[PnId].i1.p1.i2+pnToSize[PnId].i1.p2.i2+pnToSize[PnId].i1.p3.i2));
+            cout << "Initial slippage rate for: " << PnId << " is: " << pnToSize[PnId].i2 << endl;*/
+            //Nullset labelProps for current PN, they will be "filled up" when I genotype and then I'll re-estimate the PN-slippage rate.
             pnToSize[PnId].i1.p1 = Pair<int,double>(0,0);
             pnToSize[PnId].i1.p2 = Pair<int,double>(0,0);
             pnToSize[PnId].i1.p3 = Pair<int,double>(0,0);
@@ -599,10 +613,10 @@ int main(int argc, char const ** argv)
             attributeFile >> chrom;
         }
     }
-    //Set initial value for slippage rate of last PN
-    pnToSize[PnId].i2 = (pnToSize[PnId].i1.p2.i2+pnToSize[PnId].i1.p3.i2)/(2.0*(pnToSize[PnId].i1.p1.i2+pnToSize[PnId].i1.p2.i2+pnToSize[PnId].i1.p3.i2));
-    cout << "Initial slippage rate for: " << PnId << " is: " << pnToSize[PnId].i2 << endl;
-    //Nullset labelProps for last PN, they will be "filled up" again when I genotype and then I'll re-estimate the PN-slippage rate.
+    //Set initial value for slippage rate of last PN -- Temporarily remove this, I now read the PN-slippage rate from an input file
+    /*pnToSize[PnId].i2 = (pnToSize[PnId].i1.p2.i2+pnToSize[PnId].i1.p3.i2)/(2.0*(pnToSize[PnId].i1.p1.i2+pnToSize[PnId].i1.p2.i2+pnToSize[PnId].i1.p3.i2));
+    cout << "Initial slippage rate for: " << PnId << " is: " << pnToSize[PnId].i2 << endl;*/
+    //Nullset labelProps for last PN, they will be "filled up" when I genotype and then I'll re-estimate the PN-slippage rate.
     pnToSize[PnId].i1.p1 = Pair<int,double>(0,0);
     pnToSize[PnId].i1.p2 = Pair<int,double>(0,0);
     pnToSize[PnId].i1.p3 = Pair<int,double>(0,0);
@@ -848,7 +862,7 @@ int main(int argc, char const ** argv)
     Marker thisMarker;
     VcfStream out;
     VcfRecord record;
-    CharString outputDirectory = argv[3];
+    CharString outputDirectory = argv[4];
     append(outputDirectory, "/");
     append(outputDirectory, chrom);
     append(outputDirectory, ".vcf");
