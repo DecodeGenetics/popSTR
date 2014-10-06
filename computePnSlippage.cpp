@@ -69,9 +69,14 @@ int main(int argc, char const ** argv)
         appendChrAndPnId(currAttDir, chrId, pnId);
         appendChrAndPnId(currLabDir, chrId, pnId);
         append(currAttDir, "attributes");
-        append(currLabDir, "initialLabels");
+        append(currLabDir, "initialLabels");        
         ifstream attributeFile(toCString(currAttDir));
         ifstream initialLabels(toCString(currLabDir));
+        if(attributeFile.fail() || initialLabels.fail())
+        {
+            continue;
+        }
+        cout << "Starting chromosome: " << chrId << endl;
         attributeFile >> pnId;
         while (!attributeFile.eof() && !initialLabels.eof())
         {            
@@ -109,9 +114,10 @@ int main(int argc, char const ** argv)
             }
         }
         attributeFile.close();
-        initialLabels.close();   
+        initialLabels.close();
+        cout << "Finished chromosome: " << chrId << endl;   
     }
     slippage = (slippCount.p2 + slippCount.p3)/(2.0*(slippCount.p1 + slippCount.p2 + slippCount.p3));
-    cout << "Slippage for " << pnId << " is: " << slippage << endl;
+    cout << pnId << "\t" << slippage << endl;
     return 0;    
 }
