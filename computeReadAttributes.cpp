@@ -408,7 +408,7 @@ int main(int argc, char const ** argv)
     //Check arguments.
     if (argc != 7)
     {
-        cerr << "USAGE: " << argv[0] << " IN.bam IN.bam.bai output-file marker-file min-flank initialLabelFile\n";
+        cerr << "USAGE: " << argv[0] << " IN.bam IN.bam.bai attributeOutputDirectory markerInfoFile minFlankLength initialLabelOutputDirectory\n";
         return 1;
     }
     
@@ -421,7 +421,6 @@ int main(int argc, char const ** argv)
     append(attributeDirectory, PN_ID);
     append(attributeDirectory, "attributes");
     ofstream outputFile(toCString(attributeDirectory));
-    //outputFile.open(argv[3], ios_base::app);
     CharString initialLabelsDirectory = argv[6];
     append(initialLabelsDirectory, "/");
     append(initialLabelsDirectory, PN_ID);
