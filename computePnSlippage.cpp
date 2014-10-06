@@ -31,12 +31,14 @@ void appendChrAndPnId(CharString& dir, string chromNum, string pnId)
 int main(int argc, char const ** argv)
 {   
     //Check arguments.
-    if (argc != 3)
+    if (argc != 4)
     {
-        cerr << "USAGE: " << argv[0] << " directoryToAttributesAndLabels PN-id";
+        cerr << "USAGE: " << argv[0] << " directoryToAttributesAndLabels PN-id outputFile";
         return 1;
     }
         
+    ofstream outputFile;
+    outputFile.open(argv[3], ios_base::app);
     CharString attDir = argv[1];
     append(attDir, "/attributes/");
     CharString labDir = argv[1];
@@ -115,9 +117,9 @@ int main(int argc, char const ** argv)
         }
         attributeFile.close();
         initialLabels.close();
-        cout << "Finished chromosome: " << chrId << endl;   
+        cout << "Finished chromosome: " << chrId << endl;
     }
     slippage = (slippCount.p2 + slippCount.p3)/(2.0*(slippCount.p1 + slippCount.p2 + slippCount.p3));
-    cout << pnId << "\t" << slippage << endl;
+    outputFile << pnId << "\t" << slippage << endl;
     return 0;    
 }
