@@ -436,6 +436,7 @@ int main(int argc, char const ** argv)
         string motifString;
         markerFile >> motifString;
         currInfo.motif = motifString;
+        markerFile >> currInfo.refRepeatNum; 
         string refBfString;
         markerFile >> refBfString;
         currInfo.refBf = refBfString;

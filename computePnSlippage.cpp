@@ -33,7 +33,7 @@ int main(int argc, char const ** argv)
     //Check arguments.
     if (argc != 4)
     {
-        cerr << "USAGE: " << argv[0] << " directoryToAttributesAndLabels PN-id outputFile";
+        cerr << "USAGE: " << argv[0] << " pathToAttributesAndLabelsDirectory PN-id outputFile";
         return 1;
     }
         
@@ -54,18 +54,18 @@ int main(int argc, char const ** argv)
     slippCount.p3 = 0;
     double slippage;
     
-    for (unsigned i=1; i<25; ++i)
+    for (unsigned i=1; i<23; ++i)
     {
-        if (i<23)
-        {
+        /*if (i<23)
+        {*/
             stringstream ss;
             ss << i;
             chrId = ss.str();
-        }
-        if (i == 23)
+        //}
+        /*if (i == 23)
             chrId = "X";
         if (i == 24)
-            chrId = "Y";
+            chrId = "Y";*/
         currAttDir = attDir;
         currLabDir = labDir;
         appendChrAndPnId(currAttDir, chrId, pnId);
