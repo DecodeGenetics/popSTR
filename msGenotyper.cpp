@@ -203,19 +203,19 @@ int findMaxIndex(String<long double> probs)
     return maxIndex;
 }
 
-Pair<GenotypeInfo, bool> determineGenotype(String<AttributeLine> reads, double markerSlippage, String<Pair<float> > genotypes, int numberOfAlleles)
+Pair<GenotypeInfo, bool> determineGenotype(String<AttributeLine> reads, double markerSlippage, String<Pair<float> > genotypes, int numberOfAlleles, int motifLength)
 {
     GenotypeInfo returnValue;
     returnValue.pValueSum = 0;
     returnValue.genotypes = genotypes;
     returnValue.numOfReads = length(reads);
-    boost::math::poisson_distribution<> myPoiss(std::max((double)0.01,markerSlippage));
+    boost::math::poisson_distribution<> myPoiss(std::max((double)0.001,markerSlippage));
     Pair<float> genotypeToCheck;
     AttributeLine readToCheck;
     std::set<float> currentGenotype;
     std::set<float> newGenotypeSet; 
     String<long double> probs;
-    long double probSum = 0;
+    double errorProbSum = 0;
     resize(probs, length(genotypes));
     bool isHomo;
     float posNegSlipp = 1;
@@ -282,7 +282,15 @@ Pair<GenotypeInfo, bool> determineGenotype(String<AttributeLine> reads, double m
     returnValue.genotype = genotypes[indexOfWinner];
     returnValue.pValue = probs[indexOfWinner];
     newGenotypeSet.insert(returnValue.genotype.i1);
-    newGenotypeSet.insert(returnValue.genotype.i2);    
+    newGenotypeSet.insert(returnValue.genotype.i2);
+    //cout << "Slippage rate: " << markerSlippage << "\t average allele length: " << (returnValue.genotype.i1 + returnValue.genotype.i2)/2.0 << endl;
+    for (unsigned j=0; j<length(reads); ++j)
+    {
+       readToCheck = reads[j];
+       if ((readToCheck.numOfRepeats != returnValue.genotype.i1) && (readToCheck.numOfRepeats != returnValue.genotype.i2))
+        errorProbSum += readToCheck.pValue;
+    }
+    cout << "P-valueError: " << errorProbSum/returnValue.pValueSum << "\talleleLength1: " << round(returnValue.genotype.i1 * (double)motifLength) << "\talleleLength2: " << round(returnValue.genotype.i2 * (double)motifLength) << endl;
     if (newGenotypeSet == currentGenotype)
         return Pair<GenotypeInfo, bool>(returnValue, false);
     else
@@ -562,6 +570,8 @@ int main(int argc, char const ** argv)
     map<Marker, std::set<float> > markerToAlleles;
     //Map to store current genotype(and lots of other things) of a person for each marker maps from pnId and Marker-struct to GenotypeInfo struct
     map<Pair<string,Marker>, GenotypeInfo> PnAndMarkerToGenotype;
+    //Map to store sum of pValues for each alleleLength at each marker
+    map<Pair<Marker, int>, double> MarkAndAllLengToPvalSum;
     
     Marker marker;
     AttributeLine currentLine;
@@ -765,7 +775,7 @@ int main(int argc, char const ** argv)
                     }
                     genotypesToConsider = makeGenotypes(allelesToConsider);  
                     //make decision about genotype for PnId at the current marker.                  
-                    changed = determineGenotype(reads, markerToSize[it->first].i2+pnToSize[PnId].i2, genotypesToConsider, numOfAlleles);
+                    changed = determineGenotype(reads, markerToSize[it->first].i2+pnToSize[PnId].i2, genotypesToConsider, numOfAlleles, it->first.motif.size());
                     if (changed.i2)
                         ++updatedPns;
                     relabelReads(currentMarker, i-length(reads), i, changed.i1.genotype, it->first);
@@ -800,7 +810,7 @@ int main(int argc, char const ** argv)
                 allelesToConsider.insert(currAllele);
             }
             genotypesToConsider = makeGenotypes(allelesToConsider);
-            changed = determineGenotype(reads, markerToSize[it->first].i2+pnToSize[PnId].i2, genotypesToConsider, numOfAlleles);
+            changed = determineGenotype(reads, markerToSize[it->first].i2+pnToSize[PnId].i2, genotypesToConsider, numOfAlleles, it->first.motif.size());
             if (changed.i2)
                 ++updatedPns;
             relabelReads(currentMarker, length(currentMarker)-length(reads), length(currentMarker), changed.i1.genotype, it->first);
