@@ -113,7 +113,7 @@ void fillProblemX(int idx, AttributeLine currentLine, problem& myProb)
     myProb.x[idx][7].value = currentLine.sequenceLength;
     myProb.x[idx][8].index = 9;
     myProb.x[idx][8].value = currentLine.wasUnaligned;
-    myProb.x[idx][9].index = -1; // This is to indicate that there aren't any more attributes.
+    myProb.x[idx][9].index = -1; // This is to indicate that there aren't any more attributes to read in.
     myProb.x[idx][9].value = 0;    
 }
 
