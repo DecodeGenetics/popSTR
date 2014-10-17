@@ -203,13 +203,12 @@ int findMaxIndex(String<long double> probs)
     return maxIndex;
 }
 
-Pair<GenotypeInfo, bool> determineGenotype(String<AttributeLine> reads, double markerSlippage, String<Pair<float> > genotypes, int numberOfAlleles, int motifLength)
+Pair<GenotypeInfo, bool> determineGenotype(String<AttributeLine> reads, double markerSlippage, String<Pair<float> > genotypes, int numberOfAlleles, int motifLength, double beta)
 {
     GenotypeInfo returnValue;
     returnValue.pValueSum = 0;
     returnValue.genotypes = genotypes;
     returnValue.numOfReads = length(reads);
-    boost::math::poisson_distribution<> myPoiss(std::max((double)0.001,markerSlippage));
     Pair<float> genotypeToCheck;
     AttributeLine readToCheck;
     std::set<float> currentGenotype;
@@ -232,6 +231,7 @@ Pair<GenotypeInfo, bool> determineGenotype(String<AttributeLine> reads, double m
         {
             posNegSlipp = 1;
             posNegSlipp2 = 1;
+            boost::math::poisson_distribution<> myPoiss(std::max((double)0.01,markerSlippage+beta*(genotypeToCheck.i1+genotypeToCheck.i2)));
             readToCheck = reads[j];
             if (i == 0)
             {
@@ -551,17 +551,23 @@ int main(int argc, char const ** argv)
     string PnId, chrom, motif, nextWord, refRepSeq;
     String<string> PnIds;
     std::set<Marker> markers;
+    vector<double> lengthSlipps;
+    vector<int> alleleLengths;
     int start, end, numberOfReads;
+    int allLengthSum = 0;
+    double lengthSlippSum = 0;
     float refRepeatNum;
     float winner, second;
     double currPnSlipp;
+    double errorPvalSum;
+    double totalPvalSum;
     
-    //Read the slippage rate for all PNs into the pnToSize map 
+    //Read the slippage rate for all PNs into the pnToSize map and divide by three.
     while (!pnSlippageFile.eof())
     {
         pnSlippageFile >> PnId;
         pnSlippageFile >> currPnSlipp;
-        pnToSize[PnId].i2 = currPnSlipp;  
+        pnToSize[PnId].i2 = currPnSlipp/3.0;  
     }
     
     //Map from marker to all reads covering it 
@@ -571,7 +577,9 @@ int main(int argc, char const ** argv)
     //Map to store current genotype(and lots of other things) of a person for each marker maps from pnId and Marker-struct to GenotypeInfo struct
     map<Pair<string,Marker>, GenotypeInfo> PnAndMarkerToGenotype;
     //Map to store sum of pValues for each alleleLength at each marker
-    map<Pair<Marker, int>, double> MarkAndAllLengToPvalSum;
+    map<Marker, map<int,double> > MarkToAllLenToPvalSum;
+    //Map to store sum of pValue*alleleLength for all reads at each marker
+    map<Marker, double> MarkToPvalAllLenSum;
     
     Marker marker;
     AttributeLine currentLine;
@@ -584,6 +592,8 @@ int main(int argc, char const ** argv)
     //Read training data into maps
     while (!attributeFile.eof() && !initialLabels.eof())
     {
+        errorPvalSum = 0;
+        totalPvalSum = 0;
         attributeFile >> start;        
         attributeFile >> end;
         attributeFile >> motif;
@@ -598,14 +608,23 @@ int main(int argc, char const ** argv)
         marker.refRepSeq = refRepSeq;
         markers.insert(marker);
         initialLabels >> winner;
-        initialLabels >> second; 
+        initialLabels >> second;
+        alleleLengths.push_back(round(winner*marker.motif.size()) + round(second*marker.motif.size()));
+        allLengthSum += (round(winner*marker.motif.size()) + round(second*marker.motif.size()));
         for (unsigned i = 0; i < numberOfReads; ++i)
         {
             currentLine = parseNextLine(winner, second, attributeFile, marker, PnId, PnAndMarkerToGenotype);
+            MarkToAllLenToPvalSum[marker][round(currentLine.numOfRepeats*marker.motif.size())] += currentLine.pValue;
+            MarkToPvalAllLenSum[marker] += (double)round(currentLine.numOfRepeats*marker.motif.size())*currentLine.pValue;
             if (currentLine.label == 1)
                 markerToAlleles[marker].insert(currentLine.numOfRepeats);
+            else
+                errorPvalSum += currentLine.pValue;
             appendValue(mapPerMarker[marker],currentLine);
+            totalPvalSum += currentLine.pValue;
         }
+        lengthSlipps.push_back(errorPvalSum/totalPvalSum);
+        lengthSlippSum += errorPvalSum/totalPvalSum;
         attributeFile >> nextWord;
         if (nextWord != chrom)
         {
@@ -623,6 +642,20 @@ int main(int argc, char const ** argv)
             attributeFile >> chrom;
         }
     }
+    //Here I estimate initialization of alpha and beta using linear regression on how slippage changes as a function of allele length.
+    double xSum = 0, ySum = 0, xySum = 0;
+    double alpha, beta;
+    double allLengthBar, lengthSlippBar;
+    allLengthBar = (double)allLengthSum/(double)alleleLengths.size();
+    lengthSlippBar = lengthSlippSum/(double)lengthSlipps.size();
+    for (unsigned i = 0; i< lengthSlipps.size(); ++i)
+    {
+       xSum += pow(alleleLengths[i]-allLengthBar,2);
+       ySum += pow(lengthSlipps[i]-lengthSlippBar,2);
+       xySum += (alleleLengths[i]-allLengthBar) * (lengthSlipps[i]-lengthSlippBar);
+    }
+    beta = xySum/xSum;
+    alpha = lengthSlippBar - beta*allLengthBar;
     //Set initial value for slippage rate of last PN -- Temporarily remove this, I now read the PN-slippage rate from an input file
     /*pnToSize[PnId].i2 = (pnToSize[PnId].i1.p2.i2+pnToSize[PnId].i1.p3.i2)/(2.0*(pnToSize[PnId].i1.p1.i2+pnToSize[PnId].i1.p2.i2+pnToSize[PnId].i1.p3.i2));
     cout << "Initial slippage rate for: " << PnId << " is: " << pnToSize[PnId].i2 << endl;*/
@@ -671,8 +704,11 @@ int main(int argc, char const ** argv)
     double secondPart;
     double subSum;
     double finalSub;
+    double allLenSub;
+    double pValAllLenSum;
     double t;
     vector<double> subtractions;
+    map<int,double> alleleLenToPvalSum;
     //Loop over map from Marker to string<AttributeLine> and train model for each marker and use it to determine genotype
     map<Marker, String<AttributeLine> >::iterator itEnd = mapPerMarker.end();
     for (map<Marker, String<AttributeLine> >::iterator it = mapPerMarker.begin(); it != itEnd; ++it)
@@ -694,7 +730,8 @@ int main(int argc, char const ** argv)
             numOfAlleles = allelesAtMarker.size();
             markerToAlleles[it->first].clear();
             markerToAlleleFreqs[it->first].i1.clear();
-            //estimate the marker slippage
+            //estimate the marker slippage - have to subtract PN and allele length slippage
+            //Estimate number to subtract because of PN-slippage
             finalSub = 0;
             for (unsigned i = 0; i<length(PnIds); ++i)
             {                
@@ -708,9 +745,16 @@ int main(int argc, char const ** argv)
             }            
             subSum = accumulate(subtractions.begin(),subtractions.end(),0.0); 
             for (unsigned i = 0; i<length(PnIds); ++i)
-                finalSub += pnToSize[PnIds[i]].i2*(subtractions[i]/subSum);
+                finalSub += (pnToSize[PnIds[i]].i2)*(subtractions[i]/subSum);
+            //Estimate number to subtract because of allelelength slippage
+            alleleLenToPvalSum = MarkToAllLenToPvalSum[it->first];
+            pValAllLenSum = MarkToPvalAllLenSum[it->first];
+            map<int, double>::iterator innerEnd = alleleLenToPvalSum.end();
+            for (map<int, double>::iterator innerIt = alleleLenToPvalSum.begin(); innerIt != innerEnd; ++ innerIt)            
+                allLenSub += (innerIt->first * innerIt->second/pValAllLenSum);
+            allLenSub *= beta/3.0;                
             cout << "Number to be subtracted: " << finalSub << " from: " << (markerToSize[it->first].i1.p2.i2+markerToSize[it->first].i1.p3.i2)/(markerToSize[it->first].i1.p1.i2+markerToSize[it->first].i1.p2.i2+markerToSize[it->first].i1.p3.i2) << endl;
-            markerToSize[it->first].i2 = std::max((double)0,(markerToSize[it->first].i1.p2.i2+markerToSize[it->first].i1.p3.i2)/(markerToSize[it->first].i1.p1.i2+markerToSize[it->first].i1.p2.i2+markerToSize[it->first].i1.p3.i2) - finalSub);
+            markerToSize[it->first].i2 = std::max((double)0,(markerToSize[it->first].i1.p2.i2+markerToSize[it->first].i1.p3.i2)/(markerToSize[it->first].i1.p1.i2+markerToSize[it->first].i1.p2.i2+markerToSize[it->first].i1.p3.i2) - finalSub - allLenSub);
             subtractions.clear();
             //Reads with label 2 are not included in training
             prob.l = length(currentMarker) - markerToSize[it->first].i1.p2.i1;
@@ -775,7 +819,7 @@ int main(int argc, char const ** argv)
                     }
                     genotypesToConsider = makeGenotypes(allelesToConsider);  
                     //make decision about genotype for PnId at the current marker.                  
-                    changed = determineGenotype(reads, markerToSize[it->first].i2+pnToSize[PnId].i2, genotypesToConsider, numOfAlleles, it->first.motif.size());
+                    changed = determineGenotype(reads, markerToSize[it->first].i2+pnToSize[PnId].i2, genotypesToConsider, numOfAlleles, it->first.motif.size(), beta);
                     if (changed.i2)
                         ++updatedPns;
                     relabelReads(currentMarker, i-length(reads), i, changed.i1.genotype, it->first);
@@ -810,7 +854,7 @@ int main(int argc, char const ** argv)
                 allelesToConsider.insert(currAllele);
             }
             genotypesToConsider = makeGenotypes(allelesToConsider);
-            changed = determineGenotype(reads, markerToSize[it->first].i2+pnToSize[PnId].i2, genotypesToConsider, numOfAlleles, it->first.motif.size());
+            changed = determineGenotype(reads, markerToSize[it->first].i2+pnToSize[PnId].i2, genotypesToConsider, numOfAlleles, it->first.motif.size(), beta);
             if (changed.i2)
                 ++updatedPns;
             relabelReads(currentMarker, length(currentMarker)-length(reads), length(currentMarker), changed.i1.genotype, it->first);

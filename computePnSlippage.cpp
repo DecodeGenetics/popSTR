@@ -119,7 +119,7 @@ int main(int argc, char const ** argv)
         initialLabels.close();
         cout << "Finished chromosome: " << chrId << endl;
     }
-    slippage = (slippCount.p2 + slippCount.p3)/(2.0*(slippCount.p1 + slippCount.p2 + slippCount.p3));
+    slippage = (slippCount.p2 + slippCount.p3)/(slippCount.p1 + slippCount.p2 + slippCount.p3);
     outputFile << pnId << "\t" << slippage << endl;
     return 0;    
 }
