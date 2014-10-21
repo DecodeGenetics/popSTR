@@ -85,6 +85,10 @@ bool operator<(const Marker & left, const Marker & right)
 map<Marker, Pair<LabelProps,double> > markerToSize;
 //Sums the pValues of reads and counts the number of reads for each type of label at every PN, also stores the current slippage rate value for each PN
 map<string, Pair<LabelProps,double> > pnToSize;
+//Map to store sum of pValues for each alleleLength at each marker
+map<Marker, map<int,double> > MarkToAllLenToPvalSum;
+//Map to store sum of pValue*alleleLength for all reads at each marker
+map<Marker, double> MarkToPvalAllLenSum;
 //Parameter, problem and model structs to use in training of logistic regression model and computing pValues
 parameter param;
 problem prob; 
@@ -215,6 +219,7 @@ Pair<GenotypeInfo, bool> determineGenotype(String<AttributeLine> reads, double m
     std::set<float> newGenotypeSet; 
     String<long double> probs;
     double errorProbSum = 0;
+    double lengthSlippage;
     resize(probs, length(genotypes));
     bool isHomo;
     float posNegSlipp = 1;
@@ -231,7 +236,8 @@ Pair<GenotypeInfo, bool> determineGenotype(String<AttributeLine> reads, double m
         {
             posNegSlipp = 1;
             posNegSlipp2 = 1;
-            boost::math::poisson_distribution<> myPoiss(std::max((double)0.01,markerSlippage+beta*(genotypeToCheck.i1+genotypeToCheck.i2)));
+            lengthSlippage = beta*(genotypeToCheck.i1*motifLength+genotypeToCheck.i2*motifLength);
+            boost::math::poisson_distribution<> myPoiss(std::max((double)0.01,markerSlippage+lengthSlippage));
             readToCheck = reads[j];
             if (i == 0)
             {
@@ -331,6 +337,8 @@ void relabelReads(String<AttributeLine>& readsToRelabel, int start, int end, Pai
                 pnToSize[readsToRelabel[i].PnId].i1.p3.i2 += readsToRelabel[i].pValue;*/
             }
         }
+        MarkToAllLenToPvalSum[marker][round(readsToRelabel[i].numOfRepeats*marker.motif.size())] += readsToRelabel[i].pValue;
+        MarkToPvalAllLenSum[marker] += (double)round(readsToRelabel[i].numOfRepeats*marker.motif.size())*readsToRelabel[i].pValue;
     }
 }
  
@@ -575,11 +583,7 @@ int main(int argc, char const ** argv)
     //Count the total number of alleles in the population for each marker -- by checking the size of the set
     map<Marker, std::set<float> > markerToAlleles;
     //Map to store current genotype(and lots of other things) of a person for each marker maps from pnId and Marker-struct to GenotypeInfo struct
-    map<Pair<string,Marker>, GenotypeInfo> PnAndMarkerToGenotype;
-    //Map to store sum of pValues for each alleleLength at each marker
-    map<Marker, map<int,double> > MarkToAllLenToPvalSum;
-    //Map to store sum of pValue*alleleLength for all reads at each marker
-    map<Marker, double> MarkToPvalAllLenSum;
+    map<Pair<string,Marker>, GenotypeInfo> PnAndMarkerToGenotype;    
     
     Marker marker;
     AttributeLine currentLine;
@@ -663,6 +667,8 @@ int main(int argc, char const ** argv)
     pnToSize[PnId].i1.p1 = Pair<int,double>(0,0);
     pnToSize[PnId].i1.p2 = Pair<int,double>(0,0);
     pnToSize[PnId].i1.p3 = Pair<int,double>(0,0);
+    alleleLengths.clear();
+    lengthSlipps.clear();
     //Debugging code 
     cout << "Number of markers: " << mapPerMarker.size() << endl;
     cout << "Number of pns: " << length(PnIds) << endl;
@@ -733,6 +739,7 @@ int main(int argc, char const ** argv)
             //estimate the marker slippage - have to subtract PN and allele length slippage
             //Estimate number to subtract because of PN-slippage
             finalSub = 0;
+            allLenSub = 0;
             for (unsigned i = 0; i<length(PnIds); ++i)
             {                
                 if (pnToSize[PnIds[i]].i2 == 0)
@@ -753,7 +760,7 @@ int main(int argc, char const ** argv)
             for (map<int, double>::iterator innerIt = alleleLenToPvalSum.begin(); innerIt != innerEnd; ++ innerIt)            
                 allLenSub += (innerIt->first * innerIt->second/pValAllLenSum);
             allLenSub *= beta/3.0;                
-            cout << "Number to be subtracted: " << finalSub << " from: " << (markerToSize[it->first].i1.p2.i2+markerToSize[it->first].i1.p3.i2)/(markerToSize[it->first].i1.p1.i2+markerToSize[it->first].i1.p2.i2+markerToSize[it->first].i1.p3.i2) << endl;
+            cout << "Numbers to be subtracted: " << finalSub << " and " << allLenSub << " from: " << (markerToSize[it->first].i1.p2.i2+markerToSize[it->first].i1.p3.i2)/(markerToSize[it->first].i1.p1.i2+markerToSize[it->first].i1.p2.i2+markerToSize[it->first].i1.p3.i2) << endl;
             markerToSize[it->first].i2 = std::max((double)0,(markerToSize[it->first].i1.p2.i2+markerToSize[it->first].i1.p3.i2)/(markerToSize[it->first].i1.p1.i2+markerToSize[it->first].i1.p2.i2+markerToSize[it->first].i1.p3.i2) - finalSub - allLenSub);
             subtractions.clear();
             //Reads with label 2 are not included in training
@@ -762,6 +769,9 @@ int main(int argc, char const ** argv)
             markerToSize[it->first].i1.p1 = Pair<int,double>(0,0);
             markerToSize[it->first].i1.p2 = Pair<int,double>(0,0);
             markerToSize[it->first].i1.p3 = Pair<int,double>(0,0);
+            //Also "nullset" MarkToAllLenToPvalSum map and MarkToPvalAllLenSum because they will be reset as well when I relabel reads.
+            MarkToAllLenToPvalSum[it->first].clear();
+            MarkToPvalAllLenSum[it->first] = 0;
             int idx = 0;
             prob.y = Malloc(double,prob.l);
             prob.x = (feature_node **) malloc(prob.l * sizeof(feature_node *));
