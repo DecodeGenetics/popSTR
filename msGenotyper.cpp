@@ -296,7 +296,7 @@ Pair<GenotypeInfo, bool> determineGenotype(String<AttributeLine> reads, double m
        if ((readToCheck.numOfRepeats != returnValue.genotype.i1) && (readToCheck.numOfRepeats != returnValue.genotype.i2))
         errorProbSum += readToCheck.pValue;
     }
-    cout << "P-valueError: " << errorProbSum/returnValue.pValueSum << "\talleleLength1: " << round(returnValue.genotype.i1 * (double)motifLength) << "\talleleLength2: " << round(returnValue.genotype.i2 * (double)motifLength) << endl;
+    //    cout << "P-valueError: " << errorProbSum/returnValue.pValueSum << "\talleleLength1: " << round(returnValue.genotype.i1 * (double)motifLength) << "\talleleLength2: " << round(returnValue.genotype.i2 * (double)motifLength) << endl;
     if (newGenotypeSet == currentGenotype)
         return Pair<GenotypeInfo, bool>(returnValue, false);
     else
@@ -957,8 +957,8 @@ int main(int argc, char const ** argv)
         //Compute abs(allele1-allele2)*allele1Freq*allele2Freq for all genotypes and return average of those, estimate of distance between alleles.
         alleleDistance = computeAlleleDist(genotypesAtThisMarker, markerToAlleleFreqs[thisMarker].i1, pnsAtMarker);
         //To make processing of hdf5 file easier I add 150 as a "dummy" allele when population only has 2 alleles (for Agnar)
-        if (allelesAtThisMarker.size() == 2)
-            allelesAtThisMarker.insert(150);
+	//        if (allelesAtThisMarker.size() == 2)
+        //    allelesAtThisMarker.insert(150);
         genotypesAtThisMarker = makeGenotypes(allelesAtThisMarker); 
         //First fill marker specific fields of vcfRecord
         record = fillRecordMarker(thisMarker, allelesAtThisMarker);       
