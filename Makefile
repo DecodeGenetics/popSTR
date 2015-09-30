@@ -1,7 +1,11 @@
+# Use version 4.8.2 of g++
+CXX=/opt/rh/devtoolset-2/root/usr/bin/g++
+
 # include SeqAn libraries
-#CXXFLAGS+=-I/nfs/prog/bioinfo/u/arnaos/seqanProject/seqan-1.4.1/core/include
+-include ../../../libraries/Makefile.inc
 CXXFLAGS+=-I/nfs/prog/bioinfo/apps-x86_64/seqan-library/1.4.1/include
-CXXFLAGS+=-I/nfs/prog/bioinfo/apps-x86_64/
+CXXFLAGS+=-I/odinn/users/snaedisk
+
 
 
 # RELEASE build

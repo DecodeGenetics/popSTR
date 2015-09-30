@@ -407,14 +407,14 @@ Pair<Pair<Pair<CharString>,int>,ReadInfo> computeReadInfo(BamAlignmentRecord rec
 int main(int argc, char const ** argv)
 {   
     //Check arguments.
-    if (argc != 6)
+    if (argc != 7)
     {
-        cerr << "USAGE: " << argv[0] << " IN.bam IN.bam.bai outputDirectory markerInfoFile minFlankLength\n";
+        cerr << "USAGE: " << argv[0] << " IN.bam IN.bam.bai outputDirectory markerInfoFile minFlankLength PN-id\n";
         return 1;
     }
     
-    //Find and save PN-id
-    CharString PN_ID = prefix(suffix(argv[1],length(argv[1])-11),7);
+    //Save PN-id
+    CharString PN_ID = argv[6];
     
     //min-flanking area
     int minFlank = lexicalCast<int>(argv[5]);
@@ -451,50 +451,32 @@ int main(int argc, char const ** argv)
             appendValue(markers, currInfo);
     }
     
-    //Create output streams
+    //Create output stream
     CharString attributeDirectory = argv[3];
-    CharString initialLabelsDirectory = argv[3];
-    append(attributeDirectory, "/attributes/");    
-    append(initialLabelsDirectory, "/initialLabels/");
+    append(attributeDirectory, "/attributes/");
     struct stat st;
     if(stat(toCString(attributeDirectory),&st) != 0)
         mkdir(toCString(attributeDirectory),0777);
-    struct stat st2;
-    if(stat(toCString(initialLabelsDirectory),&st2) != 0)
-        mkdir(toCString(initialLabelsDirectory),0777);
-    if (length(currInfo.chrom) > 2)
-    {
+    if (length(currInfo.chrom) > 2)    
         append(attributeDirectory, currInfo.chrom);
-        append(initialLabelsDirectory, currInfo.chrom);
-    }
     else
     {
         append(attributeDirectory, "chr");
         append(attributeDirectory, currInfo.chrom);
-        append(initialLabelsDirectory, "chr");
-        append(initialLabelsDirectory, currInfo.chrom);
     }
     struct stat st3;
     if(stat(toCString(attributeDirectory),&st3) != 0)
         mkdir(toCString(attributeDirectory),0777);
-	struct stat st4;
-    if(stat(toCString(initialLabelsDirectory),&st4) != 0)
-        mkdir(toCString(initialLabelsDirectory),0777);
     append(attributeDirectory, "/");
-	append(initialLabelsDirectory, "/");    
 	append(attributeDirectory, PN_ID);
-	append(initialLabelsDirectory, PN_ID);
-    append(attributeDirectory, "attributes");
-    append(initialLabelsDirectory, "initialLabels");
-    ofstream outputFile(toCString(attributeDirectory));        
-    ofstream initialLabels(toCString(initialLabelsDirectory));
+    ofstream outputFile(toCString(attributeDirectory));
     
     //Set up how many repeats I require for each motif length
     repeatNumbers[2]=4;
     repeatNumbers[3]=3;
-    repeatNumbers[4]=3;
-    repeatNumbers[5]=3;
-    repeatNumbers[6]=3;
+    repeatNumbers[4]=2;
+    repeatNumbers[5]=2;
+    repeatNumbers[6]=2;
     
     // Setup name store, cache, and BAM I/O context.
     typedef StringSet<CharString> TNameStore;
@@ -699,7 +681,7 @@ int main(int argc, char const ** argv)
             numToLook = repeatNumbers[length(markers[currentMarker].motif)];     
         }
     }
-    map<STRinfoSmall, String<ReadPairInfo> > finalMap; //Stores String of ReadPairInfo for each marker
+    map<STRinfoSmall, Pair<Pair<std::set<float>,vector<float> >,String<ReadPairInfo> > > finalMap; //Stores String of ReadPairInfo for each marker
     map<Pair<Pair<CharString>, int>, ReadInfo>::const_iterator ite = myMap.end();
     for(map<Pair<Pair<CharString>, int>, ReadInfo>::const_iterator it = myMap.begin(); it != ite; ++it)
     {
@@ -728,31 +710,30 @@ int main(int argc, char const ** argv)
         currentReadPair.repSeq = it->second.repSeq;
         currentReadPair.wasUnaligned = it->second.wasUnaligned;
         //Put the lime in the coconut 
-        appendValue(finalMap[currentSTR], currentReadPair);
+        appendValue(finalMap[currentSTR].i2, currentReadPair);
+        finalMap[currentSTR].i1.i1.insert(currentReadPair.numOfRepeats);
+        finalMap[currentSTR].i1.i2.push_back(currentReadPair.numOfRepeats);
     }
     
+    //I write PN-id and check whether any reads have been found, if not I exit.
+    outputFile << PN_ID << endl;
+    if (finalMap.empty())
+        return 0;
+
     //Set for storing allele-types and vector for storing reported alleles, count occurences in vector for all elements in set to get frequency of each allele
     std::set<float> presentAlleles; 
     vector<float> allAlleles;
     int winnerFreq, secondFreq, currentFreq;
     float winner, second;
     //Loop over map of markers and look at all reads for each of them
-    map<STRinfoSmall, String<ReadPairInfo> >::const_iterator ite2 = finalMap.end();
-    if (finalMap.size() > 0)
-        outputFile << PN_ID << endl;
-    for(map<STRinfoSmall, String<ReadPairInfo> >::iterator it = finalMap.begin(); it != ite2; ++it)
+    map<STRinfoSmall, Pair<Pair<std::set<float>,vector<float> >,String<ReadPairInfo> > >::const_iterator ite2 = finalMap.end();          
+    for(map<STRinfoSmall, Pair<Pair<std::set<float>,vector<float> >,String<ReadPairInfo> > >::iterator it = finalMap.begin(); it != ite2; ++it)
     {
-        outputFile << it->first.chrom << "\t" << it->first.STRstart << "\t" << it->first.STRend << "\t" << it->first.motif << "\t" << setprecision(1) << fixed << it->first.refRepeatNum << "\t" << length(it->second) << "\t" << it->first.refRepSeq << endl;
-        for (unsigned i=0; i < length(it->second); ++i)
-        {
-            ReadPairInfo printMe = it->second[i];
-            presentAlleles.insert(printMe.numOfRepeats);
-            allAlleles.push_back(printMe.numOfRepeats);
-            outputFile << setprecision(1) << fixed << printMe.numOfRepeats << "\t" << setprecision(2) << fixed << printMe.ratioBf << "\t" << setprecision(2) << fixed << printMe.ratioAf << "\t" << printMe.locationShift << "\t" << printMe.mateEditDist << "\t" << setprecision(2) << fixed << printMe.purity << "\t" << setprecision(2) << fixed << printMe.ratioOver20In << "\t" << setprecision(2) << fixed << printMe.ratioOver20After << "\t" << printMe.sequenceLength << "\t" << printMe.wasUnaligned << "\t" << printMe.repSeq << endl; 
-        }
+        presentAlleles = it->second.i1.i1;
+        allAlleles = it->second.i1.i2;
         winnerFreq = 0;
         secondFreq = 0;
-        //Loop over set of alleles to consider and count occurences of each to determine initial labelling.
+        //Loop over set of alleles to consider and count occurences of each to determine initial labelling
         std::set<float>::iterator end = presentAlleles.end();
         for (std::set<float>::iterator allIt = presentAlleles.begin(); allIt!=end; ++allIt)
         {
@@ -780,9 +761,14 @@ int main(int argc, char const ** argv)
         }
         if (secondFreq < 0.15*winnerFreq)
             second = winner;
-        initialLabels << setprecision(1) << fixed << winner << "\t" << setprecision(1) << fixed << second << endl;
-        presentAlleles.clear();
-        allAlleles.clear();
+        //Write attributes and initial labelling to output file
+        outputFile << it->first.chrom << "\t" << it->first.STRstart << "\t" << it->first.STRend << "\t" << it->first.motif << "\t" << setprecision(1) << fixed << it->first.refRepeatNum << "\t" << length(it->second.i2) << "\t" << it->first.refRepSeq << "\t" << setprecision(1) << fixed << winner << "\t" << setprecision(1) << fixed << second << endl;
+        for (unsigned i=0; i < length(it->second.i2); ++i)
+        {
+            ReadPairInfo printMe = it->second.i2[i];
+            //Print attributes to output file.
+            outputFile << setprecision(1) << fixed << printMe.numOfRepeats << "\t" << setprecision(2) << fixed << printMe.ratioBf << "\t" << setprecision(2) << fixed << printMe.ratioAf << "\t" << printMe.locationShift << "\t" << printMe.mateEditDist << "\t" << setprecision(2) << fixed << printMe.purity << "\t" << setprecision(2) << fixed << printMe.ratioOver20In << "\t" << setprecision(2) << fixed << printMe.ratioOver20After << "\t" << printMe.sequenceLength << "\t" << printMe.wasUnaligned << "\t" << printMe.repSeq << endl; 
+        }        
     }
     return 0;
 }
