@@ -279,7 +279,7 @@ int main(int argc, char const ** argv)
         cerr << "USAGE: " << argv[0] << " attributesDirectory/ PN-id outputFile iterationNumber [markerSlippageDirectory/ modelAndLabelDir/]";
         return 1;
     }
-    int minNpns = 1000;
+    int minNpns = 50;
     CharString attDir = argv[1], outputPath = argv[3], modelDir, labDir, currLabDir, currAttDir, slippDir;
     string pnId = argv[2], itNumStr = argv[4];
     ofstream outputFile;

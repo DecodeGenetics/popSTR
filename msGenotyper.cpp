@@ -327,7 +327,7 @@ Pair<GenotypeInfo, Pair<bool> > determineGenotype(String<AttributeLine> reads, d
             if (i == 0)
             {
                 ++returnValue.alleleToFreq[readToCheck.numOfRepeats];
-                if (length(reads) >= 10)
+                if (length(reads) >= 5)
                     returnValue.pValueSum += readToCheck.pValue;
                 //Debugging code
                 //cout << "P-value of read " << j << " with " << readToCheck.numOfRepeats << " repeats:  " << readToCheck.pValue << endl;
@@ -441,7 +441,7 @@ void relabelReads(String<AttributeLine>& readsToRelabel, int start, int end, Pai
         {
             readsToRelabel[i].label = 1;
             ++markerToSizeAndModel[marker].i1.i1.p1.i1;
-            if (numOfReads >= 10)
+            if (numOfReads >= 5)
             {
                 markerToSizeAndModel[marker].i1.i1.p1.i2 += readsToRelabel[i].pValue;
                 if (seqMethod.compare("HiSeq")==0)
@@ -457,7 +457,7 @@ void relabelReads(String<AttributeLine>& readsToRelabel, int start, int end, Pai
                 readsToRelabel[i].label = 2;
                 ++markerToSizeAndModel[marker].i1.i1.p2.i1;
                 markerToStepSum[marker] += (float)marker.motif.size();
-                if (numOfReads >= 10)
+                if (numOfReads >= 5)
                 {
                     markerToSizeAndModel[marker].i1.i1.p2.i2 += readsToRelabel[i].pValue;
                     if (seqMethod.compare("HiSeq")==0)
@@ -470,7 +470,7 @@ void relabelReads(String<AttributeLine>& readsToRelabel, int start, int end, Pai
             { 
                 readsToRelabel[i].label = -1;
                 ++markerToSizeAndModel[marker].i1.i1.p3.i1;
-                if (numOfReads >= 10)
+                if (numOfReads >= 5)
                 {                
                     markerToSizeAndModel[marker].i1.i1.p3.i2 += readsToRelabel[i].pValue;
                     if (seqMethod.compare("HiSeq")==0)
@@ -696,7 +696,8 @@ double computeAlleleDist(String<Pair<float> > genotypes, map<float,int> allelesT
 }
 
 //Count number of words in a sentence, use to parse input from attribute file
-Pair<int, String<string> > countNumberOfWords(string sentence){
+Pair<int, String<string> > countNumberOfWords(string sentence)
+{
     int numberOfWords = 0;
     String<string> words;
     resize(words, 11);
@@ -733,7 +734,8 @@ void readMarkerSlippage(CharString markerSlippageFile, map<Marker, Pair<Pair<Lab
     double currMarkSlipp;
     int nPns;
     Marker currMarker; 
-    while (!markerSlippageIn.eof())
+    unsigned counter = 1; 
+    while (true)
     {
         markerSlippageIn >> currMarker.chrom;
         markerSlippageIn >> currMarker.start;        
@@ -743,13 +745,18 @@ void readMarkerSlippage(CharString markerSlippageFile, map<Marker, Pair<Pair<Lab
         markerSlippageIn >> currMarker.refRepSeq;
         markerSlippageIn >> currMarkSlipp;
         markerSlippageIn >> nPns;
+        if (markerSlippageIn.eof())
+            break;
         if (currMarker.start < startCoord) 
             continue;
         if (currMarker.start > endCoord)
             break;
         markerToSizeAndModel[currMarker].i1.i2 = currMarkSlipp;
         markerToSizeAndModel[currMarker].i2 = NULL;
+        cout << "Finished processing marker number: " << counter << endl;
+        ++counter;
     }
+    cout << "Finished reading marker slippage." << endl;
     markerSlippageIn.close();
 } 
 
@@ -758,14 +765,17 @@ void readPnSlippage(ifstream& pnSlippageFile)
     string PnId;
     int nMarkers;
     double currPnSlipp;
-    while (!pnSlippageFile.eof())
+    while (true)
     {
         pnSlippageFile >> PnId;
         pnSlippageFile >> currPnSlipp;
-        pnToSize[PnId].i1= currPnSlipp/2.0;
         pnSlippageFile >> nMarkers;
+        if (pnSlippageFile.eof())
+            break;
+        pnToSize[PnId].i1= currPnSlipp/2.0;        
         pnToSize[PnId].i2 = nMarkers; 
     }
+    cout << "Finished reading pn Slippage." << endl;
     pnSlippageFile.close();
 }
 
@@ -781,6 +791,7 @@ void readPnSeqMethod(ifstream& pnToSeqMethodFile, map<string, String<string> >& 
         appendValue(seqMethodToPns[seqMethod], pnId);
         pnToSeqMethod[pnId] = seqMethod;
     }
+    cout << "Finished reading pn to seqMethod file." << endl;
 }
 
 inline bool exists(const std::string& name) 
@@ -819,10 +830,6 @@ Pair<double, int> estimateSlippage(String<string> PnIds, map<Pair<string,Marker>
     {                
         finalSub += (pnToSize[PnIds[i]].i1)*(subtractions[i]/subSum);
     }
-    if (marker.start == 187097697)
-    {
-        cout << "(" << currMarkerToSizeAndModel[marker].i1.i1.p2.i2<< "+" << currMarkerToSizeAndModel[marker].i1.i1.p3.i2 << ")/(" << currMarkerToSizeAndModel[marker].i1.i1.p1.i2 << "+" << currMarkerToSizeAndModel[marker].i1.i1.p2.i2 << "+" << currMarkerToSizeAndModel[marker].i1.i1.p3.i2 << ") - " << finalSub << endl;
-    }
     result = (double)(currMarkerToSizeAndModel[marker].i1.i1.p2.i2+currMarkerToSizeAndModel[marker].i1.i1.p3.i2)/(double)(currMarkerToSizeAndModel[marker].i1.i1.p1.i2+currMarkerToSizeAndModel[marker].i1.i1.p2.i2+currMarkerToSizeAndModel[marker].i1.i1.p3.i2) - (double)finalSub;
     
     return Pair<double, int>(result, nAvailable);    
@@ -855,6 +862,7 @@ int main(int argc, char const ** argv)
     {                
         estimateMarkerSlippage = false;
         append(markerSlippageFile, prevItNumStr);
+        cout << "Path to marker slippage file: " << markerSlippageFile << endl;
         readMarkerSlippage(markerSlippageFile, markerToSizeAndModel, startCoord, endCoord);
     }
     //Otherwise I'm going to estimate the marker slippage values and write them to an output file.
@@ -915,6 +923,7 @@ int main(int argc, char const ** argv)
                     append(modelAndLabelDir,"labels");
                     append(modelAndLabelDir, prevItNumStr);
                     labelFile.open(toCString(modelAndLabelDir));
+                    cout << "Path to label file: " << modelAndLabelDir << endl; 
                     if(labelFile.fail())
                         cout << "Could not open label file" << endl;
                     modelAndLabelDir = argv[7];
@@ -970,7 +979,7 @@ int main(int argc, char const ** argv)
             }
             if (numberOfWordsAndWords.i1 == 11) 
             {
-                if (numberOfReads < 10)                
+                if (numberOfReads < 5)                
                     enoughReads = false;                
                 for (unsigned i = 0; i < numberOfReads; ++i)
                 {
@@ -1087,14 +1096,14 @@ int main(int argc, char const ** argv)
             if (loops > 10)
                 break;
             ++loops;
-            cout << "Iteration number: " << loops << endl;            
+            /*cout << "Iteration number: " << loops << endl;            
             cout << "Average step size modulo the period: fmod(" << markerToStepSum[thisMarker] << "/" << length(currentMarker) << ",1.0)" << endl;
-            cout << "P for geometric distribution is: " << "1.0/(" << fmod(markerToStepSum[thisMarker]/(float)length(currentMarker),1.0) << "+1.0) = " << 1.0/(fmod(markerToStepSum[thisMarker]/(float)length(currentMarker),1.0)+1.0) << endl;
+            cout << "P for geometric distribution is: " << "1.0/(" << fmod(markerToStepSum[thisMarker]/(float)length(currentMarker),1.0) << "+1.0) = " << 1.0/(fmod(markerToStepSum[thisMarker]/(float)length(currentMarker),1.0)+1.0) << endl;*/
             double geomP = 1/(fmod(markerToStepSum[thisMarker]/(float)length(currentMarker),1.0)+1);
             boost::math::geometric_distribution<> myGeom(std::max((double)0.001,geomP));
             allelesAtMarker = markerToAlleles[thisMarker];                        
             numOfAlleles = allelesAtMarker.size();
-            cout << "Number of alleles at the marker: " << numOfAlleles << endl;
+            //cout << "Number of alleles at the marker: " << numOfAlleles << endl;
             markerToAlleles[thisMarker].clear();
             markerToAlleleFreqs[thisMarker].i1.clear();
             //estimate the marker slippage - have to subtract PN (and allele length slippage)
@@ -1269,12 +1278,12 @@ int main(int argc, char const ** argv)
         if (!estimateMarkerSlippage) 
         {     
             //Check the number of alleles in the population, shouldn't be above ~20 but should be 2 or higher to be considered polymorphic.
-            if ((markerToAlleles[thisMarker].size() > 20) || (markerToAlleles[thisMarker].size() < 2))
+            /*if ((markerToAlleles[thisMarker].size() > 20) || (markerToAlleles[thisMarker].size() < 2))
             {
                 cout << "Not enough or too many alleles at marker " << z << endl;
                 ++z;
                 continue;      
-            }
+            }*/
             //Make a String<Pair<float> > which contains a list of genotypes
             genotypesAtThisMarker = makeGenotypes(markerToAlleles[thisMarker]);
             //Compute abs(allele1-allele2)*allele1Freq*allele2Freq for all genotypes and return average of those, estimate of distance between alleles.

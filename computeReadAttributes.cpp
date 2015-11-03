@@ -94,11 +94,11 @@ std::set<Dna5String> createPermutations(Dna5String motif)
 {
     std::set<Dna5String> permutations;
     permutations.insert(motif);
-    Dna5String bases = "ACGTN";
+    Dna5String bases = "ATCGN";
     for (unsigned i = 0; i < length(motif); ++i)
     {
         Dna5String motifCopy = motif; 
-        for(unsigned j = 0; j < 5; ++j)
+        for(unsigned j = 0; j < length(bases); ++j)
         {
             motifCopy[i] = bases[j];
             if(motifCopy[i] != motif[i])
@@ -258,7 +258,7 @@ float findRatioOver20(CharString sequence)
 }
 
 //Get value of a tag (ATH! does not work if tag-value is not numeric)
-int getTagValue(BamAlignmentRecord record, CharString tagName)
+int getTagValue(BamAlignmentRecord& record, CharString tagName)
 {
     int returnValue;
     unsigned myIdx = 0;
@@ -285,7 +285,7 @@ int getTagValue(BamAlignmentRecord record, CharString tagName)
 }
 
 //Computes all sorts of quality indicators for the given read w.r.t. the given microsatellite 
-Pair<Pair<Pair<CharString>,int>,ReadInfo> computeReadInfo(BamAlignmentRecord record, STRinfo markerInfo, Pair<Pair<int>, float> coordinates, int minFlank)
+Pair<Pair<Pair<CharString>,int>,ReadInfo> computeReadInfo(BamAlignmentRecord& record, STRinfo& markerInfo, Pair<Pair<int>, float> coordinates, int minFlank, int maxRepeatLength)
 {
     //Type definition for alignment structure
     typedef Dna5String TSequence;              
@@ -304,6 +304,7 @@ Pair<Pair<Pair<CharString>,int>,ReadInfo> computeReadInfo(BamAlignmentRecord rec
     Dna5String before, repeatRegion, after;
     CharString qualString = record.qual;
     ReadInfo mapValue;
+    int oldStartCoord = coordinates.i1.i1;
     
     //Create index to map and store sequence length, STRend and motif
     Pair<CharString> readNameAndChrom = Pair<CharString>(record.qName,markerInfo.chrom);
@@ -326,39 +327,26 @@ Pair<Pair<Pair<CharString>,int>,ReadInfo> computeReadInfo(BamAlignmentRecord rec
     int scoreBf = globalAlignment(alignBefore, Score<int,Simple>(1,-5,-5), AlignConfig<true, false, true, false>());
     int scoreAf = globalAlignment(alignAfter, Score<int,Simple>(1,-5,-5), AlignConfig<false, true, false, true>());
     
-    int startCoord = toSourcePosition(row(alignBefore,1),toViewPosition(row(alignBefore,0),length(source(row(alignBefore,0)))-1))+1;
+    int viewPosition = toViewPosition(row(alignBefore,0),length(source(row(alignBefore,0)))-1);
+    int startCoord = toSourcePosition(row(alignBefore,1),viewPosition)+1;
+    if (startCoord == 1 && isGap(row(alignBefore,1),viewPosition))
+        startCoord -= 1;
     int endCoord = toSourcePosition(row(alignAfter,1),toViewPosition(row(alignAfter,0),0))-1;
-    
+    int flankSum = startCoord + length(source(row(alignAfter,1)))-endCoord - 1;
+    int leftFlank = startCoord;
+    int rightFlank = length(source(row(alignAfter,1)))-endCoord - 1;
+    /*cout << "FlankSum: " << flankSum << " leftFlank: " << leftFlank << " rightFlank: " << rightFlank << endl;
+    if (leftFlank > 0)
+        cout << "AlignmentScore before: " << (float)scoreBf/(float)startCoord << endl;
+    if (rightFlank > 0)
+        cout << "AlignmentScore after: " << (float)scoreAf/(float)(length(after)-endCoord-1) << endl;
+    cout << "Infix command is: infix(" << startCoord << "," << oldStartCoord+endCoord+1 << ")" << endl;*/
     bool startOk = false;
     bool endOk = false;
-    //Check if a minimum number of repeats have been found and whether the flanking area is sufficient for both start and end coordinates
-    if ((length(source(row(alignBefore,1)))-(startCoord) >=length(markerInfo.motif)*repeatNumbers[length(markerInfo.motif)]) && (startCoord>=minFlank))
-        startOk = true;
-    if ((endCoord >= length(markerInfo.motif)*repeatNumbers[length(markerInfo.motif)]-1)&&(length(source(row(alignAfter,1)))-endCoord > minFlank))
-        endOk = true;
-    
-    int oldStartCoord = coordinates.i1.i1;
-    //If both coordinates are ok and the distance between them is > motifLength * min#ofMotifs then the read is useful. 
-    if (startOk && endOk && startCoord < oldStartCoord + endCoord)
+    bool purityOk = false;
+    if (startCoord >= oldStartCoord + endCoord)
     {
-        coordinates.i1.i1 = startCoord;
-        coordinates.i1.i2 = endCoord;
-        mapValue.ratioBf = (float)scoreBf/((float)startCoord+1);
-        mapValue.ratioAf = (float)scoreAf/(float)(length(after)-endCoord);
-        //Debugging code
-        //cout << "Infix command is: infix(" << coordinates.i1.i1+1 << "," << oldStartCoord+coordinates.i1.i2+1 << ")" << endl; 
-        repeatRegion = infix(record.seq, coordinates.i1.i1, oldStartCoord+coordinates.i1.i2+1);
-        mapValue.numOfRepeats = (float)length(repeatRegion)/(float)length(markerInfo.motif);
-        //If I find less repeats than the required minimum (depending on the motif length) then I don't use the read
-        if (ceil(mapValue.numOfRepeats) < repeatNumbers[length(markerInfo.motif)])
-            mapValue.numOfRepeats = 666;
-        mapValue.ratioOver20In = findRatioOver20(infix(qualString, coordinates.i1.i1, oldStartCoord+coordinates.i1.i2+1));
-        mapValue.ratioOver20After = findRatioOver20(suffix(suffix(qualString, oldStartCoord),coordinates.i1.i2+1));
-        mapValue.purity = getPurity(markerInfo.motif,repeatRegion);
-    }
-    //Otherwise I can't use the read so I set numOfRepeats to 666
-    else
-    {
+        //cout << "Start coordinate is larger than end coordinate, can't use this read." << endl;
         coordinates.i1.i1 = startCoord;
         coordinates.i1.i2 = endCoord;
         mapValue.ratioBf = 0;
@@ -366,10 +354,114 @@ Pair<Pair<Pair<CharString>,int>,ReadInfo> computeReadInfo(BamAlignmentRecord rec
         mapValue.numOfRepeats = 666;
         //Debugging code
         //cout << "Infix command is: infix(" << coordinates.i1.i1 << "," << oldStartCoord+coordinates.i1.i2+1 << ")" << endl; 
-        repeatRegion = "NNN";
+        repeatRegion = "";
         mapValue.ratioOver20In = 0;
         mapValue.ratioOver20After = 0;
         mapValue.purity = 0;
+        mapValue.repSeq = repeatRegion;
+        mapValue.locationShift = 100;
+        return Pair<Pair<Pair<CharString>,int>,ReadInfo>(mapKey,mapValue);
+    }
+    //Check if a minimum number of repeats have been found and whether the flanking area is sufficient for both start and end coordinates
+    if ((length(source(row(alignBefore,1)))-(startCoord) >=length(markerInfo.motif)*repeatNumbers[length(markerInfo.motif)]) && (startCoord>=minFlank))
+        startOk = true;
+    if ((endCoord >= length(markerInfo.motif)*repeatNumbers[length(markerInfo.motif)]-1)&&(length(source(row(alignAfter,1)))-endCoord > minFlank))
+        endOk = true;
+    if (getPurity(markerInfo.motif,infix(record.seq, startCoord, oldStartCoord+endCoord+1))>0.6)
+        purityOk = true;
+    
+    //I allow only 3 aligning bases on either side if I have more than 16 aligned bases in total.
+    if (flankSum >= 16 && leftFlank >= 3 && rightFlank >= 3)
+    {
+        startOk = true;
+        endOk = true;
+    }    
+    if (leftFlank < 3 && flankSum>=16 && (float)scoreAf/(float)(length(after)-endCoord)>0.7 && getPurity(markerInfo.motif,infix(record.seq, startCoord, oldStartCoord+endCoord+1))>0.7 && (oldStartCoord+endCoord+1)-startCoord >= maxRepeatLength)
+    {
+        //cout << "Am making greater than allele on left end." << endl;
+        coordinates.i1.i1 = startCoord;
+        coordinates.i1.i2 = endCoord;
+        mapValue.ratioBf = 0;
+        mapValue.ratioAf = (float)scoreAf/(float)(length(after)-endCoord-1);
+        //cout << "Infix command is: infix(" << coordinates.i1.i1 << "," << oldStartCoord+coordinates.i1.i2+1 << ")" << endl; 
+        repeatRegion = infix(record.seq, coordinates.i1.i1, oldStartCoord+coordinates.i1.i2+1);
+        mapValue.numOfRepeats = 23.3;
+        mapValue.ratioOver20In = findRatioOver20(infix(qualString, coordinates.i1.i1, oldStartCoord+coordinates.i1.i2+1));
+        mapValue.ratioOver20After = findRatioOver20(suffix(suffix(qualString, oldStartCoord),coordinates.i1.i2+1));
+        mapValue.purity = getPurity(markerInfo.motif,repeatRegion);   
+    }
+    else
+    {
+        if (rightFlank < 3 && flankSum>=16 && (float)scoreBf/(float)startCoord>0.7 && getPurity(markerInfo.motif,infix(record.seq, startCoord, oldStartCoord+endCoord+1))>0.7 && (oldStartCoord+endCoord+1)-startCoord >= maxRepeatLength)
+        {
+            //cout << "Am making greater than allele on right end." << endl;
+            coordinates.i1.i1 = startCoord;
+            coordinates.i1.i2 = endCoord;
+            mapValue.ratioBf = (float)scoreBf/((float)startCoord+1);
+            mapValue.ratioAf = 0;
+            //cout << "Infix command is: infix(" << coordinates.i1.i1 << "," << oldStartCoord+coordinates.i1.i2+1 << ")" << endl; 
+            repeatRegion = infix(record.seq, coordinates.i1.i1, oldStartCoord+coordinates.i1.i2+1);
+            //Make numOfRepeats negative to indicate that they were found at the end of the allele
+            mapValue.numOfRepeats = 23.3;
+            mapValue.ratioOver20In = findRatioOver20(infix(qualString, coordinates.i1.i1, oldStartCoord+coordinates.i1.i2+1));
+            mapValue.ratioOver20After = 0;
+            mapValue.purity = getPurity(markerInfo.motif,repeatRegion);
+        }
+        else
+        {
+            if (rightFlank < 3 && leftFlank < 3 && getPurity(markerInfo.motif,record.seq)>0.8 && (oldStartCoord+endCoord+1)-startCoord >= maxRepeatLength)
+            {
+                //cout << "Am making a SUPER allele." << endl;
+                coordinates.i1.i1 = 0;
+                coordinates.i1.i2 = length(record.seq)-1;
+                mapValue.ratioBf = 0.0;
+                mapValue.ratioAf = 0.0;
+                //cout << "Infix command is: infix(" << 0 << "," << length(record.seq)-1 << ")" << endl;
+                repeatRegion = record.seq;
+                mapValue.numOfRepeats = 23.3;
+                mapValue.ratioOver20In = findRatioOver20(record.seq);
+                mapValue.ratioOver20After = 0.0;
+                mapValue.purity = getPurity(markerInfo.motif,repeatRegion);
+            }
+            else
+            {            
+                //If both coordinates are ok and the distance between them is > motifLength * min#ofMotifs then the read is useful. 
+                if (startOk && endOk && purityOk && startCoord < oldStartCoord + endCoord)
+                {
+                    coordinates.i1.i1 = startCoord;
+                    coordinates.i1.i2 = endCoord;
+                    mapValue.ratioBf = (float)scoreBf/((float)startCoord+1);
+                    mapValue.ratioAf = (float)scoreAf/(float)(length(after)-endCoord-1);
+                    //Debugging code
+                    //cout << "Infix command is: infix(" << coordinates.i1.i1 << "," << oldStartCoord+coordinates.i1.i2+1 << ")" << endl; 
+                    repeatRegion = infix(record.seq, coordinates.i1.i1, oldStartCoord+coordinates.i1.i2+1);
+                    mapValue.numOfRepeats = (float)length(repeatRegion)/(float)length(markerInfo.motif);
+                    if (length(repeatRegion)>=maxRepeatLength)
+                        mapValue.numOfRepeats = 23.3;
+                    //If I find less repeats than the required minimum (depending on the motif length) then I don't use the read
+                    if (ceil(mapValue.numOfRepeats) < repeatNumbers[length(markerInfo.motif)])
+                        mapValue.numOfRepeats = 666;
+                    mapValue.ratioOver20In = findRatioOver20(infix(qualString, coordinates.i1.i1, oldStartCoord+coordinates.i1.i2+1));
+                    mapValue.ratioOver20After = findRatioOver20(suffix(suffix(qualString, oldStartCoord),coordinates.i1.i2+1));
+                    mapValue.purity = getPurity(markerInfo.motif,repeatRegion);
+                }
+                //Otherwise I can't use the read so I set numOfRepeats to 666
+                else
+                {
+                    coordinates.i1.i1 = startCoord;
+                    coordinates.i1.i2 = endCoord;
+                    mapValue.ratioBf = 0;
+                    mapValue.ratioAf = 0;
+                    mapValue.numOfRepeats = 666;
+                    //Debugging code
+                    //cout << "Infix command is: infix(" << coordinates.i1.i1 << "," << oldStartCoord+coordinates.i1.i2+1 << ")" << endl; 
+                    repeatRegion = infix(record.seq, coordinates.i1.i1, oldStartCoord+coordinates.i1.i2+1);
+                    mapValue.ratioOver20In = 0;
+                    mapValue.ratioOver20After = 0;
+                    mapValue.purity = 0;
+                }
+            }
+        }
     } 
     mapValue.repSeq = repeatRegion;
     
@@ -404,17 +496,68 @@ Pair<Pair<Pair<CharString>,int>,ReadInfo> computeReadInfo(BamAlignmentRecord rec
     return Pair<Pair<Pair<CharString>,int>,ReadInfo>(mapKey,mapValue);
 }
 
-int main(int argc, char const ** argv)
-{   
-    //Check arguments.
-    if (argc != 7)
+bool qualityClipBegin(BamAlignmentRecord& record, int windowSize)
+{        
+    int qualSum = 0;
+    for (unsigned i = 0; i<windowSize; ++i)
+        qualSum += (record.qual[i]-33);
+    int averageQual = round((double)qualSum/(double)windowSize);
+    if (averageQual>=25)
+        return true;
+    int index = 0;
+    while (averageQual<25 && index+windowSize < length(record.qual))
     {
-        cerr << "USAGE: " << argv[0] << " IN.bam IN.bam.bai outputDirectory markerInfoFile minFlankLength PN-id\n";
+        qualSum -= (record.qual[index]-33);
+        qualSum += (record.qual[index+windowSize]-33);
+        averageQual = round((double)qualSum/(double)windowSize);
+        ++index;
+    }
+    erase(record.seq, 0, index-1);
+    erase(record.qual, 0, index-1);
+    record.beginPos += (index - 1);
+    if (length(record.seq)>=30)
+        return true;
+    else 
+        return false;
+}
+
+bool qualityClipEnd(BamAlignmentRecord& record, int windowSize)
+{        
+    int qualSum = 0;
+    for (unsigned i = length(record.qual)-1; i>=length(record.qual)-windowSize; --i)
+        qualSum += (record.qual[i]-33);
+    int averageQual = round((double)qualSum/(double)windowSize);
+    if (averageQual>=25)
+        return true;
+    int index = 0;
+    while (averageQual<25 && index < length(record.qual))
+    {
+        ++index;
+        qualSum -= (record.qual[length(record.qual)-index]-33);
+        qualSum += (record.qual[length(record.qual)-windowSize-index]-33);
+        averageQual = round((double)qualSum/(double)windowSize);        
+    }
+    erase(record.seq, length(record.seq)-index, length(record.seq)-1);
+    erase(record.qual,length(record.qual)-index, length(record.qual)-1);
+    if (length(record.seq)>=30)
+        return true;
+    else 
+        return false;
+}
+
+int main(int argc, char const ** argv)
+{          
+    //Check arguments.
+    if (argc != 8)
+    {
+        cerr << "USAGE: " << argv[0] << " IN.bam IN.bam.bai outputDirectory markerInfoFile minFlankLength maxRepeatLength PN-id\n";
         return 1;
     }
     
     //Save PN-id
-    CharString PN_ID = argv[6];
+    int maxRepeatLength = lexicalCast<int>(argv[6]);
+    CharString PN_ID = argv[7];
+    int windowSize = 5;
     
     //min-flanking area
     int minFlank = lexicalCast<int>(argv[5]);
@@ -523,7 +666,9 @@ int main(int argc, char const ** argv)
     
     //Jump to beginning of chromosome, put 100000000 as end to make sure I find alignments.
     bool hasAlignments = false;
-    if (!jumpToRegion(inStream, hasAlignments, context, rID, 0, 100000000, baiIndex))
+    int jumpStart = std::max(0,markers[0].STRstart - 2000);
+    int jumpEnd = jumpStart + 100000000;
+    if (!jumpToRegion(inStream, hasAlignments, context, rID, jumpStart, jumpEnd, baiIndex))
     {
         cerr << "ERROR: Could not jump to " << currInfo.chrom << ":" << 0 << "\n";
         return 1;
@@ -548,6 +693,12 @@ int main(int argc, char const ** argv)
             cerr << "ERROR: Could not read record from BAM file.\n";
             return 1;
         }
+        //If the read is a duplicate or doesn't pass the quality check I move on
+        if (hasFlagQCNoPass(record) || hasFlagDuplicate(record))
+            continue;
+        //Clip away low quality ends and return false if the read becomes too short after this
+        if (!qualityClipBegin(record, windowSize) || !qualityClipEnd(record, windowSize))
+            continue;
         bamStart = record.beginPos;
         bamEnd = bamStart + length(record.seq);
         mateStart = record.pNext;
@@ -571,8 +722,8 @@ int main(int argc, char const ** argv)
         //Loop for comparing current read to all possible markers, could be useful for more than one marker 
         while (true)
         {
-            // Have not reached beginning of the interval, low quality? -> next read
-            if (bamEnd < max(markers[currentMarker].STRstart-1000,0) || hasFlagQCNoPass(record) || hasFlagDuplicate(record))
+            // Have not reached beginning of the interval? -> next read
+            if (bamEnd < max(markers[currentMarker].STRstart-1000,0))
                 break;
             //If the read is not long enough for the current marker I need to check the next marker
             if (markers[currentMarker].STRend-markers[currentMarker].STRstart > length(record.seq)-2*minFlank)
@@ -590,9 +741,9 @@ int main(int argc, char const ** argv)
                 int startCoordinate = coordinates.i1.i1;
                 int endCoordinate = coordinates.i1.i2;
                 //Does the read contain all of the microsatellite and flanking regions larger than the set minimum? -> Then I compute read attributes
-                if ((startCoordinate >= minFlank) && (endCoordinate + minFlank - 1 < length(record.seq)) && (endCoordinate > startCoordinate))
+                if ((startCoordinate != length(record.seq)) && (endCoordinate > startCoordinate))
                 {                
-                    Pair<Pair<Pair<CharString>,int>,ReadInfo> keyValuePair = computeReadInfo(record, markers[currentMarker], coordinates, minFlank);
+                    Pair<Pair<Pair<CharString>,int>,ReadInfo> keyValuePair = computeReadInfo(record, markers[currentMarker], coordinates, minFlank, maxRepeatLength);
                     keyValuePair.i2.wasUnaligned = false; 
                     if (myMap.count(keyValuePair.i1) == 0)
                     {
@@ -652,9 +803,9 @@ int main(int argc, char const ** argv)
                     int startCoordinate = coordinates.i1.i1;
                     int endCoordinate = coordinates.i1.i2;
                     //Does the read contain all of the microsatellite and flanking regions larger than the set minimum? -> Then I compute read attributes
-                    if ((startCoordinate >= minFlank) && (endCoordinate + minFlank - 1 < length(record.seq)) && (endCoordinate > startCoordinate))
+                    if ((startCoordinate != length(record.seq)) && (endCoordinate > startCoordinate))
                     {
-                        Pair<Pair<Pair<CharString>,int>,ReadInfo> keyValuePair = computeReadInfo(record, markers[currentMarker], coordinates, minFlank);
+                        Pair<Pair<Pair<CharString>,int>,ReadInfo> keyValuePair = computeReadInfo(record, markers[currentMarker], coordinates, minFlank, maxRepeatLength);
                         keyValuePair.i2.wasUnaligned = true;
                         if (myMap.count(keyValuePair.i1) == 0)
                         {
@@ -718,25 +869,32 @@ int main(int argc, char const ** argv)
     //I write PN-id and check whether any reads have been found, if not I exit.
     outputFile << PN_ID << endl;
     if (finalMap.empty())
+    {
+        cout << "Finished: " << PN_ID << endl;
         return 0;
+    }
 
     //Set for storing allele-types and vector for storing reported alleles, count occurences in vector for all elements in set to get frequency of each allele
     std::set<float> presentAlleles; 
     vector<float> allAlleles;
+    vector<float> biggerAlleles;
     int winnerFreq, secondFreq, currentFreq;
     float winner, second;
     //Loop over map of markers and look at all reads for each of them
     map<STRinfoSmall, Pair<Pair<std::set<float>,vector<float> >,String<ReadPairInfo> > >::const_iterator ite2 = finalMap.end();          
     for(map<STRinfoSmall, Pair<Pair<std::set<float>,vector<float> >,String<ReadPairInfo> > >::iterator it = finalMap.begin(); it != ite2; ++it)
-    {
-        presentAlleles = it->second.i1.i1;
-        allAlleles = it->second.i1.i2;
+    {        
+        String<ReadPairInfo> readPairs = it->second.i2;        
+        presentAlleles = it->second.i1.i1;                
+        allAlleles = it->second.i1.i2;        
         winnerFreq = 0;
         secondFreq = 0;
         //Loop over set of alleles to consider and count occurences of each to determine initial labelling
         std::set<float>::iterator end = presentAlleles.end();
         for (std::set<float>::iterator allIt = presentAlleles.begin(); allIt!=end; ++allIt)
         {
+            if (*allIt < 0)
+                continue;
             currentFreq = count(allAlleles.begin(), allAlleles.end(), *allIt);
             if ( currentFreq > winnerFreq)
             {
@@ -762,13 +920,17 @@ int main(int argc, char const ** argv)
         if (secondFreq < 0.15*winnerFreq)
             second = winner;
         //Write attributes and initial labelling to output file
-        outputFile << it->first.chrom << "\t" << it->first.STRstart << "\t" << it->first.STRend << "\t" << it->first.motif << "\t" << setprecision(1) << fixed << it->first.refRepeatNum << "\t" << length(it->second.i2) << "\t" << it->first.refRepSeq << "\t" << setprecision(1) << fixed << winner << "\t" << setprecision(1) << fixed << second << endl;
-        for (unsigned i=0; i < length(it->second.i2); ++i)
+        outputFile << it->first.chrom << "\t" << it->first.STRstart << "\t" << it->first.STRend << "\t" << it->first.motif << "\t" << setprecision(1) << fixed << it->first.refRepeatNum << "\t" << length(readPairs) << "\t" << it->first.refRepSeq << "\t" << setprecision(1) << fixed << winner << "\t" << setprecision(1) << fixed << second << endl;
+        for (unsigned i=0; i < length(readPairs); ++i)
         {
-            ReadPairInfo printMe = it->second.i2[i];
+            ReadPairInfo printMe = readPairs[i];
+            //cout << "Printing read number " << i << " which reports " << printMe.numOfRepeats << " repeats." << endl;
+            if (printMe.numOfRepeats < 0)
+                continue;
             //Print attributes to output file.
-            outputFile << setprecision(1) << fixed << printMe.numOfRepeats << "\t" << setprecision(2) << fixed << printMe.ratioBf << "\t" << setprecision(2) << fixed << printMe.ratioAf << "\t" << printMe.locationShift << "\t" << printMe.mateEditDist << "\t" << setprecision(2) << fixed << printMe.purity << "\t" << setprecision(2) << fixed << printMe.ratioOver20In << "\t" << setprecision(2) << fixed << printMe.ratioOver20After << "\t" << printMe.sequenceLength << "\t" << printMe.wasUnaligned << "\t" << printMe.repSeq << endl; 
+            outputFile << setprecision(1) << fixed << printMe.numOfRepeats << flush << "\t" << setprecision(2) << fixed << printMe.ratioBf << "\t" << setprecision(2) << fixed << printMe.ratioAf << "\t" << printMe.locationShift << "\t" << printMe.mateEditDist << "\t" << setprecision(2) << fixed << std::min((float)1.00, printMe.purity) << "\t" << setprecision(2) << fixed << printMe.ratioOver20In << "\t" << setprecision(2) << fixed << printMe.ratioOver20After << "\t" << printMe.sequenceLength << "\t" << printMe.wasUnaligned << "\t" << printMe.repSeq << endl; 
         }        
     }
+    cout << "Finished: " << PN_ID << endl;
     return 0;
 }
