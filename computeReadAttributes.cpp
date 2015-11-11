@@ -371,12 +371,12 @@ Pair<Pair<Pair<CharString>,int>,ReadInfo> computeReadInfo(BamAlignmentRecord& re
         purityOk = true;
     
     //I allow only 3 aligning bases on either side if I have more than 16 aligned bases in total.
-    if (flankSum >= 16 && leftFlank >= 3 && rightFlank >= 3)
+    if (flankSum >= 2*minFlank && leftFlank >= 3 && rightFlank >= 3)
     {
         startOk = true;
         endOk = true;
     }    
-    if (leftFlank < 3 && flankSum>=16 && (float)scoreAf/(float)(length(after)-endCoord)>0.7 && getPurity(markerInfo.motif,infix(record.seq, startCoord, oldStartCoord+endCoord+1))>0.7 && (oldStartCoord+endCoord+1)-startCoord >= maxRepeatLength)
+    if (leftFlank < 3 && flankSum>=2*minFlank && (float)scoreAf/(float)(length(after)-endCoord)>0.7 && getPurity(markerInfo.motif,infix(record.seq, startCoord, oldStartCoord+endCoord+1))>0.7 && (oldStartCoord+endCoord+1)-startCoord >= maxRepeatLength)
     {
         //cout << "Am making greater than allele on left end." << endl;
         coordinates.i1.i1 = startCoord;
@@ -385,14 +385,14 @@ Pair<Pair<Pair<CharString>,int>,ReadInfo> computeReadInfo(BamAlignmentRecord& re
         mapValue.ratioAf = (float)scoreAf/(float)(length(after)-endCoord-1);
         //cout << "Infix command is: infix(" << coordinates.i1.i1 << "," << oldStartCoord+coordinates.i1.i2+1 << ")" << endl; 
         repeatRegion = infix(record.seq, coordinates.i1.i1, oldStartCoord+coordinates.i1.i2+1);
-        mapValue.numOfRepeats = 23.3;
+        mapValue.numOfRepeats = (float)maxRepeatLength/(float)length(markerInfo.motif);
         mapValue.ratioOver20In = findRatioOver20(infix(qualString, coordinates.i1.i1, oldStartCoord+coordinates.i1.i2+1));
         mapValue.ratioOver20After = findRatioOver20(suffix(suffix(qualString, oldStartCoord),coordinates.i1.i2+1));
         mapValue.purity = getPurity(markerInfo.motif,repeatRegion);   
     }
     else
     {
-        if (rightFlank < 3 && flankSum>=16 && (float)scoreBf/(float)startCoord>0.7 && getPurity(markerInfo.motif,infix(record.seq, startCoord, oldStartCoord+endCoord+1))>0.7 && (oldStartCoord+endCoord+1)-startCoord >= maxRepeatLength)
+        if (rightFlank < 3 && flankSum>=2*minFlank && (float)scoreBf/(float)startCoord>0.7 && getPurity(markerInfo.motif,infix(record.seq, startCoord, oldStartCoord+endCoord+1))>0.7 && (oldStartCoord+endCoord+1)-startCoord >= maxRepeatLength)
         {
             //cout << "Am making greater than allele on right end." << endl;
             coordinates.i1.i1 = startCoord;
@@ -402,7 +402,7 @@ Pair<Pair<Pair<CharString>,int>,ReadInfo> computeReadInfo(BamAlignmentRecord& re
             //cout << "Infix command is: infix(" << coordinates.i1.i1 << "," << oldStartCoord+coordinates.i1.i2+1 << ")" << endl; 
             repeatRegion = infix(record.seq, coordinates.i1.i1, oldStartCoord+coordinates.i1.i2+1);
             //Make numOfRepeats negative to indicate that they were found at the end of the allele
-            mapValue.numOfRepeats = 23.3;
+            mapValue.numOfRepeats = (float)maxRepeatLength/(float)length(markerInfo.motif);
             mapValue.ratioOver20In = findRatioOver20(infix(qualString, coordinates.i1.i1, oldStartCoord+coordinates.i1.i2+1));
             mapValue.ratioOver20After = 0;
             mapValue.purity = getPurity(markerInfo.motif,repeatRegion);
@@ -418,7 +418,7 @@ Pair<Pair<Pair<CharString>,int>,ReadInfo> computeReadInfo(BamAlignmentRecord& re
                 mapValue.ratioAf = 0.0;
                 //cout << "Infix command is: infix(" << 0 << "," << length(record.seq)-1 << ")" << endl;
                 repeatRegion = record.seq;
-                mapValue.numOfRepeats = 23.3;
+                mapValue.numOfRepeats = (float)maxRepeatLength/(float)length(markerInfo.motif);
                 mapValue.ratioOver20In = findRatioOver20(record.seq);
                 mapValue.ratioOver20After = 0.0;
                 mapValue.purity = getPurity(markerInfo.motif,repeatRegion);
@@ -437,7 +437,7 @@ Pair<Pair<Pair<CharString>,int>,ReadInfo> computeReadInfo(BamAlignmentRecord& re
                     repeatRegion = infix(record.seq, coordinates.i1.i1, oldStartCoord+coordinates.i1.i2+1);
                     mapValue.numOfRepeats = (float)length(repeatRegion)/(float)length(markerInfo.motif);
                     if (length(repeatRegion)>=maxRepeatLength)
-                        mapValue.numOfRepeats = 23.3;
+                        mapValue.numOfRepeats = (float)maxRepeatLength/(float)length(markerInfo.motif);
                     //If I find less repeats than the required minimum (depending on the motif length) then I don't use the read
                     if (ceil(mapValue.numOfRepeats) < repeatNumbers[length(markerInfo.motif)])
                         mapValue.numOfRepeats = 666;

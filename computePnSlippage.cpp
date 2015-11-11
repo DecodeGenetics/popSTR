@@ -151,6 +151,7 @@ void readData(ifstream& attributeFile, LabelProps& slippCount)
                 getline (attributeFile,nextLine);
         }
     }
+    cout << slippCount.p1 << " " << slippCount.p2 << " " slippCount.p3 << endl; 
 }
 
 void readMarkerSlippage(CharString markerSlippDir, int chromNum, string itNumStr)
