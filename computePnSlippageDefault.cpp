@@ -248,6 +248,7 @@ int main(int argc, char const ** argv)
             if (numberOfReads >= 10)
             {
                 append(modelDir, marker.chrom);
+                append(modelDir, "_");
                 stringstream startStr;
                 startStr << marker.start;
                 append(modelDir, startStr.str());

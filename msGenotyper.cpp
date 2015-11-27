@@ -1265,6 +1265,7 @@ int main(int argc, char const ** argv)
             stringstream zstr;
             zstr << thisMarker.chrom;
             append(modelAndLabelDir, zstr.str());
+            append(modelAndLabelDir, "_");
             zstr.str("");
             zstr.clear();
             zstr << thisMarker.start;

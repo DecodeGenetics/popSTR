@@ -60,7 +60,7 @@ bool operator<(const Marker & left, const Marker & right)
 }
 
 //Sums the pValues of reads at every marker, also stores the current slippage rate value for each marker
-map<Marker, Pair<double> > markerToPSumSlipp;
+map<Marker, Pair<double> > markerToPSumAndSlipp;
 
 //Stores the logistic regression model definition for each marker, is cleared for each chromosome
 map<Marker, model*> markerToModel;
@@ -151,7 +151,7 @@ void readData(ifstream& attributeFile, LabelProps& slippCount)
                 getline (attributeFile,nextLine);
         }
     }
-    cout << slippCount.p1 << " " << slippCount.p2 << " " slippCount.p3 << endl; 
+    cout << slippCount.p1 << " " << slippCount.p2 << " " << slippCount.p3 << endl; 
 }
 
 void readMarkerSlippage(CharString markerSlippDir, int chromNum, string itNumStr)
@@ -173,7 +173,7 @@ void readMarkerSlippage(CharString markerSlippDir, int chromNum, string itNumStr
         markerSlippageFile >> tempVal;
         markerSlippageFile >> tempVal;
         markerSlippageFile >> tempVal;
-        markerSlippageFile >> markerToPSumSlipp[currMarker].i2;
+        markerSlippageFile >> markerToPSumAndSlipp[currMarker].i2;
         markerSlippageFile >> markerToNpns[currMarker];
     }
 }
@@ -258,7 +258,7 @@ void parseNextLine(float winner, float second, ifstream& attributeFile, Marker& 
         attributeFile >> temp;
     }
     currentLine.pValue = getPval(marker, currentLine);
-    markerToPSumSlipp[marker].i1 += currentLine.pValue;
+    markerToPSumAndSlipp[marker].i1 += currentLine.pValue;
     if (currentLine.numOfRepeats == winner || currentLine.numOfRepeats == second)    
         slippCount.p1 += currentLine.pValue;    
     else 
@@ -355,6 +355,7 @@ int main(int argc, char const ** argv)
                         append(modelDir, marker.chrom);
                         append(modelDir, "/");
                         append(modelDir, marker.chrom);
+                        append(modelDir, "_");
                         stringstream startStr;
                         startStr << marker.start;
                         append(modelDir, startStr.str());
@@ -365,7 +366,7 @@ int main(int argc, char const ** argv)
                         modelDir = argv[6];
                     }
                     else
-                        markerToPSumSlipp[marker].i1 = -1.0;
+                        markerToPSumAndSlipp[marker].i1 = -1.0;
                 }
                 if (numberOfWordsAndWords.i1 == 11)
                 {
@@ -402,10 +403,10 @@ int main(int argc, char const ** argv)
         vector<double> numerators;
         double currMarkSlipp, currPvalSum, currNumerator, denominator;
         double finalSub = 0;
-        map<Marker, Pair<double> >::const_iterator markerEnd = markerToPSumSlipp.end(); 
-        for (map<Marker, Pair<double> >::iterator markerStart = markerToPSumSlipp.begin(); markerStart != markerEnd; ++markerStart)
+        map<Marker, Pair<double> >::const_iterator markerEnd = markerToPSumAndSlipp.end(); 
+        for (map<Marker, Pair<double> >::iterator markerStart = markerToPSumAndSlipp.begin(); markerStart != markerEnd; ++markerStart)
         {            
-            if (markerToPSumSlipp[markerStart->first].i1 == -1.0)
+            if (markerToPSumAndSlipp[markerStart->first].i1 == -1.0)
             {
                 ++nMissing;
                 continue;
@@ -420,18 +421,18 @@ int main(int argc, char const ** argv)
         }
         denominator = accumulate(numerators.begin(),numerators.end(),0.0);
         unsigned index = 0;
-        for (map<Marker, Pair<double> >::iterator markerStart = markerToPSumSlipp.begin(); markerStart != markerEnd; ++markerStart)
+        for (map<Marker, Pair<double> >::iterator markerStart = markerToPSumAndSlipp.begin(); markerStart != markerEnd; ++markerStart)
         {
-            if (markerToPSumSlipp[markerStart->first].i1 == -1.0)
+            if (markerToPSumAndSlipp[markerStart->first].i1 == -1.0)
                 continue;
             finalSub += markerStart->second.i2 * numerators[index]/denominator;
             ++index;    
         }
         slippage = (slippCount.p2 + slippCount.p3)/(slippCount.p1 + slippCount.p2 + slippCount.p3) - finalSub;
-        cout << "Number of markers available for estimating pnSlippage for " << pnId << " is: " << markerToPSumSlipp.size() - nMissing << endl;
+        cout << "Number of markers available for estimating pnSlippage for " << pnId << " is: " << markerToPSumAndSlipp.size() - nMissing << endl;
     }
     else 
         slippage = (slippCount.p2 + slippCount.p3)/(slippCount.p1 + slippCount.p2 + slippCount.p3);
-    outputFile << pnId << "\t" << slippage << "\t" << markerToPSumSlipp.size() - nMissing << endl;    
+    outputFile << pnId << "\t" << slippage << "\t" << markerToPSumAndSlipp.size() - nMissing << endl;    
     return 0;    
 }

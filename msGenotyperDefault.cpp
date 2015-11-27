@@ -83,7 +83,7 @@ bool operator<(const Marker & left, const Marker & right)
 }
 
 //Sums the pValues of reads and counts the number of reads for each type of label at every marker, also stores the current slippage rate value for each marker
-map<Marker, Pair<Pair<LabelProps,double> ,model* > > markerToSizeAndModel;
+map<Marker, Pair<LabelProps,double> > markerToSizeAndModel;
 //Stores the slippage rate value for each PN - read from input file.
 map<string, double> pnToSize;
 //Maps from pnId to reads and labels for one marker, is cleared for each marker 
@@ -132,22 +132,6 @@ void fillProblemX(int idx, AttributeLine currentLine, problem& myProb)
     myProb.x[idx][9].value = 0;    
 }
 
-double getPval(Marker marker, AttributeLine currentLine)
-{
-    double predict_label;
-    model* model_ = markerToSizeAndModel[marker].i2;
-    double *prob_estimates = (double *) malloc(2*sizeof(double));
-    problem prob_;
-    prob_.bias = -1;
-    prob_.l = 1;
-    prob_.n = 9;
-    prob_.x = (feature_node **) malloc(prob_.l * sizeof(feature_node *));
-    prob_.x[0] = (feature_node *) malloc(10 * sizeof(feature_node));
-    fillProblemX(0, currentLine, prob_);
-    predict_label = predict_probability(model_,prob_.x[0],prob_estimates);
-    return prob_estimates[0];
-}
-
 //Parses one line from attribute file by filling up and returning an AttributeLine, also initializes markerToSizeAndModel map using the labels 
 AttributeLine parseNextLine(float winner, float second, ifstream& attributeFile, Marker& marker, string PnId, map<Pair<string,Marker>, GenotypeInfo>& PnAndMarkerToGenotype, String<string> firstLine, bool useFirstLine, bool enoughReads)
 {
@@ -189,26 +173,26 @@ AttributeLine parseNextLine(float winner, float second, ifstream& attributeFile,
     if ((fabs(currentLine.numOfRepeats - winner) <= 0.05) || (fabs(currentLine.numOfRepeats - second) <= 0.05))
     {
         currentLine.label = 1;
-        ++markerToSizeAndModel[marker].i1.i1.p1.i1;        
+        ++markerToSizeAndModel[marker].i1.p1.i1;        
         if (enoughReads)           
-            markerToSizeAndModel[marker].i1.i1.p1.i2 += currentLine.pValue;
+            markerToSizeAndModel[marker].i1.p1.i2 += currentLine.pValue;
     }
     else 
     {
         if ((fabs(currentLine.numOfRepeats - (winner - 1)) <= 0.05) || (fabs(currentLine.numOfRepeats - (second - 1)) <= 0.05))
         {
             currentLine.label = 2;            
-            ++markerToSizeAndModel[marker].i1.i1.p2.i1;
+            ++markerToSizeAndModel[marker].i1.p2.i1;
             if (enoughReads)
-                markerToSizeAndModel[marker].i1.i1.p2.i2 += currentLine.pValue;
+                markerToSizeAndModel[marker].i1.p2.i2 += currentLine.pValue;
             markerToStepSum[marker] += (float)marker.motif.size();
         }
         else
         {             
             currentLine.label = -1;
-            ++markerToSizeAndModel[marker].i1.i1.p3.i1;
+            ++markerToSizeAndModel[marker].i1.p3.i1;
             if (enoughReads)
-                markerToSizeAndModel[marker].i1.i1.p3.i2 += currentLine.pValue;
+                markerToSizeAndModel[marker].i1.p3.i2 += currentLine.pValue;
             float diff1, diff2;
             diff1 = fabs(currentLine.numOfRepeats - winner);
             diff2 = fabs(currentLine.numOfRepeats - second);
@@ -408,26 +392,26 @@ void relabelReads(String<AttributeLine>& readsToRelabel, int start, int end, Pai
         if ((fabs(readsToRelabel[i].numOfRepeats - newGenotype.i1)<=0.05) || (fabs(readsToRelabel[i].numOfRepeats - newGenotype.i2)<=0.05))
         {
             readsToRelabel[i].label = 1;
-            ++markerToSizeAndModel[marker].i1.i1.p1.i1;
+            ++markerToSizeAndModel[marker].i1.p1.i1;
             if (numOfReads >= 5)
-                markerToSizeAndModel[marker].i1.i1.p1.i2 += readsToRelabel[i].pValue;                
+                markerToSizeAndModel[marker].i1.p1.i2 += readsToRelabel[i].pValue;                
         }
         else 
         {
             if ((fabs(readsToRelabel[i].numOfRepeats - (newGenotype.i1 - 1))<=0.05) || (fabs(readsToRelabel[i].numOfRepeats - (newGenotype.i2 - 1))<=0.05))
             {
                 readsToRelabel[i].label = 2;
-                ++markerToSizeAndModel[marker].i1.i1.p2.i1;
+                ++markerToSizeAndModel[marker].i1.p2.i1;
                 markerToStepSum[marker] += (float)marker.motif.size();
                 if (numOfReads >= 5)
-                    markerToSizeAndModel[marker].i1.i1.p2.i2 += readsToRelabel[i].pValue;                    
+                    markerToSizeAndModel[marker].i1.p2.i2 += readsToRelabel[i].pValue;                    
             }
             else
             { 
                 readsToRelabel[i].label = -1;
-                ++markerToSizeAndModel[marker].i1.i1.p3.i1;
+                ++markerToSizeAndModel[marker].i1.p3.i1;
                 if (numOfReads >= 5)             
-                    markerToSizeAndModel[marker].i1.i1.p3.i2 += readsToRelabel[i].pValue;
+                    markerToSizeAndModel[marker].i1.p3.i2 += readsToRelabel[i].pValue;
                 float diff1, diff2;
                 diff1 = fabs(readsToRelabel[i].numOfRepeats - newGenotype.i1);
                 diff2 = fabs(readsToRelabel[i].numOfRepeats - newGenotype.i2);
@@ -697,7 +681,7 @@ inline bool exists(const std::string& name)
   return (stat (name.c_str(), &buffer) == 0); 
 }
 
-Pair<double, int> estimateSlippage(String<string> PnIds, map<Pair<string,Marker>, GenotypeInfo> PnAndMarkerToGenotype, Marker marker, map<Marker, Pair<Pair<LabelProps,double> ,model* > > currMarkerToSizeAndModel)
+Pair<double, int> estimateSlippage(String<string> PnIds, map<Pair<string,Marker>, GenotypeInfo> PnAndMarkerToGenotype, Marker marker, map<Marker, Pair<LabelProps,double> > currMarkerToSizeAndModel)
 {
     int nMissing = 0, nAvailable;
     double firstPart, secondPart, subSum, finalSub=0, t, result;
@@ -715,7 +699,7 @@ Pair<double, int> estimateSlippage(String<string> PnIds, map<Pair<string,Marker>
         else 
             t = pnToSize[PnIds[i]];
         firstPart = 1.0/(t*(1.0-t));                
-        secondPart = PnAndMarkerToGenotype[Pair<string,Marker>(PnIds[i],marker)].pValueSum/(currMarkerToSizeAndModel[marker].i1.i1.p1.i2+currMarkerToSizeAndModel[marker].i1.i1.p2.i2+currMarkerToSizeAndModel[marker].i1.i1.p3.i2);                                  
+        secondPart = PnAndMarkerToGenotype[Pair<string,Marker>(PnIds[i],marker)].pValueSum/(currMarkerToSizeAndModel[marker].i1.p1.i2+currMarkerToSizeAndModel[marker].i1.p2.i2+currMarkerToSizeAndModel[marker].i1.p3.i2);                                  
         subtractions.push_back(firstPart*secondPart);
     }
     subSum = accumulate(subtractions.begin(),subtractions.end(),0.0);
@@ -727,7 +711,7 @@ Pair<double, int> estimateSlippage(String<string> PnIds, map<Pair<string,Marker>
     {                
         finalSub += (pnToSize[PnIds[i]])*(subtractions[i]/subSum);
     }
-    result = (double)(currMarkerToSizeAndModel[marker].i1.i1.p2.i2+currMarkerToSizeAndModel[marker].i1.i1.p3.i2)/(double)(currMarkerToSizeAndModel[marker].i1.i1.p1.i2+currMarkerToSizeAndModel[marker].i1.i1.p2.i2+currMarkerToSizeAndModel[marker].i1.i1.p3.i2) - (double)finalSub;
+    result = (double)(currMarkerToSizeAndModel[marker].i1.p2.i2+currMarkerToSizeAndModel[marker].i1.p3.i2)/(double)(currMarkerToSizeAndModel[marker].i1.p1.i2+currMarkerToSizeAndModel[marker].i1.p2.i2+currMarkerToSizeAndModel[marker].i1.p3.i2) - (double)finalSub;
     
     return Pair<double, int>(result, nAvailable);    
 }
@@ -943,14 +927,14 @@ int main(int argc, char const ** argv)
             //estimate the marker slippage - have to subtract PN (and allele length slippage)
             //Estimate marker slippage and update in markerToSizeAndModel map            
             slippAndNavail = estimateSlippage(PnIds, PnAndMarkerToGenotype, it->first, markerToSizeAndModel);
-            markerToSizeAndModel[it->first].i1.i2 = std::max((double)0.0,slippAndNavail.i1);
+            markerToSizeAndModel[it->first].i2 = std::max((double)0.0,slippAndNavail.i1);
             nAvailable = slippAndNavail.i2;                            
             //Reads with label 2 are not included in training
-            prob.l = length(currentMarker) - markerToSizeAndModel[it->first].i1.i1.p2.i1;
+            prob.l = length(currentMarker) - markerToSizeAndModel[it->first].i1.p2.i1;
             //Now I "nullSet" the markerToSizeAndModel map for the marker I am looking at so I can update it when I relabel the reads 
-            markerToSizeAndModel[it->first].i1.i1.p1 = Pair<int,double>(0,0);
-            markerToSizeAndModel[it->first].i1.i1.p2 = Pair<int,double>(0,0);
-            markerToSizeAndModel[it->first].i1.i1.p3 = Pair<int,double>(0,0);
+            markerToSizeAndModel[it->first].i1.p1 = Pair<int,double>(0,0);
+            markerToSizeAndModel[it->first].i1.p2 = Pair<int,double>(0,0);
+            markerToSizeAndModel[it->first].i1.p3 = Pair<int,double>(0,0);
             //Nullset the averageStepSize map 
             markerToStepSum[it->first] = 0.0;          
             int idx = 0;
@@ -1010,7 +994,7 @@ int main(int argc, char const ** argv)
                     }
                     genotypesToConsider = makeGenotypes(allelesToConsider);  
                     //make decision about genotype for PnId at the current marker.        
-                    changed = determineGenotype(reads, markerToSizeAndModel[it->first].i1.i2/2.0+pnToSize[PnId], genotypesToConsider, numOfAlleles, it->first.motif.size(), myGeom);                   
+                    changed = determineGenotype(reads, markerToSizeAndModel[it->first].i2/2.0+pnToSize[PnId], genotypesToConsider, numOfAlleles, it->first.motif.size(), myGeom);                   
                     if (changed.i2.i1)
                         ++updatedPns;
                     relabelReads(currentMarker, i-length(reads), i, changed.i1.genotype, it->first);
@@ -1054,7 +1038,7 @@ int main(int argc, char const ** argv)
                 allelesToConsider.insert(currAllele);
             }
             genotypesToConsider = makeGenotypes(allelesToConsider);
-            changed = determineGenotype(reads, markerToSizeAndModel[it->first].i1.i2+pnToSize[PnId], genotypesToConsider, numOfAlleles, it->first.motif.size(), myGeom);
+            changed = determineGenotype(reads, markerToSizeAndModel[it->first].i2+pnToSize[PnId], genotypesToConsider, numOfAlleles, it->first.motif.size(), myGeom);
             if (changed.i2.i1)
                 ++updatedPns;
             relabelReads(currentMarker, length(currentMarker)-length(reads), length(currentMarker), changed.i1.genotype, it->first);
@@ -1121,8 +1105,8 @@ int main(int argc, char const ** argv)
         clear(record);
         markerToAlleleFreqs[it->first].i2 = PnsAtMarker;
         PnToAlleles.clear();
-        markerSlippageOut << thisMarker.chrom << "\t" << thisMarker.start << "\t" << thisMarker.end << "\t" << thisMarker.motif << "\t" << thisMarker.refRepeatNum << "\t" << thisMarker.refRepSeq << "\t" << setprecision(4) << fixed << markerToSizeAndModel[it->first].i1.i2 << "\t" << nAvailable<< endl;
-        cout << thisMarker.start << " totalSlipp: " << setprecision(4) << fixed << markerToSizeAndModel[it->first].i1.i2 << endl;
+        markerSlippageOut << thisMarker.chrom << "\t" << thisMarker.start << "\t" << thisMarker.end << "\t" << thisMarker.motif << "\t" << thisMarker.refRepeatNum << "\t" << thisMarker.refRepSeq << "\t" << setprecision(4) << fixed << markerToSizeAndModel[it->first].i2 << "\t" << nAvailable<< endl;
+        cout << thisMarker.start << " totalSlipp: " << setprecision(4) << fixed << markerToSizeAndModel[it->first].i2 << endl;
         cout << "Finished marker number: " << z << endl;
         ++z;                 
     }
