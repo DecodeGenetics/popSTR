@@ -219,7 +219,7 @@ int main(int argc, char const ** argv)
     double slippage; 
     string nextLine;
     Marker marker;
-    int numberOfReads;
+    int numberOfReads, numberOfMarkers = 0;
     float winner, second;
     Pair<int, String<string> > numberOfWordsAndWords;        
     if(attributeFile.fail())
@@ -239,6 +239,7 @@ int main(int argc, char const ** argv)
         numberOfWordsAndWords = countNumberOfWords(nextLine);
         if (numberOfWordsAndWords.i1 == 9) 
         {                      
+            ++numberOfMarkers;
             marker.chrom = numberOfWordsAndWords.i2[0];
             marker.start = lexicalCast<int>(numberOfWordsAndWords.i2[1]);             
             marker.end = lexicalCast<int>(numberOfWordsAndWords.i2[2]);                
@@ -264,7 +265,7 @@ int main(int argc, char const ** argv)
         if (numberOfWordsAndWords.i1 == 11)
         {
             if (numberOfReads >= 10)
-            {
+            {                
                 for (unsigned i = 0; i < numberOfReads; ++i)
                 {
                     if (i == 0)
@@ -288,7 +289,7 @@ int main(int argc, char const ** argv)
     
     int nMissing = 0;
     vector<double> numerators;
-    double currMarkSlipp, currPvalSum, currNumerator, denominator;
+    double currMarkSlipp, currPvalSum, currNumerator, denominator = 0;
     double finalSub = 0;
     map<Marker, Pair<double> >::const_iterator markerEnd = markerToPSumSlipp.end(); 
     for (map<Marker, Pair<double> >::iterator markerStart = markerToPSumSlipp.begin(); markerStart != markerEnd; ++markerStart)
@@ -307,16 +308,23 @@ int main(int argc, char const ** argv)
         numerators.push_back(currNumerator);
     }
     denominator = accumulate(numerators.begin(),numerators.end(),0.0);
-    unsigned index = 0;
-    for (map<Marker, Pair<double> >::iterator markerStart = markerToPSumSlipp.begin(); markerStart != markerEnd; ++markerStart)
+    if (numberOfMarkers - nMissing > 1)
     {
-        if (markerToPSumSlipp[markerStart->first].i1 == -1.0)
-            continue;
-        finalSub += markerStart->second.i2 * numerators[index]/denominator;
-        ++index;    
+        unsigned index = 0;
+        for (map<Marker, Pair<double> >::iterator markerStart = markerToPSumSlipp.begin(); markerStart != markerEnd; ++markerStart)
+        {
+            if (markerToPSumSlipp[markerStart->first].i1 == -1.0)
+                continue;
+            finalSub += markerStart->second.i2 * numerators[index]/denominator;
+            ++index;    
+        }
     }
-    slippage = (slippCount.p2 + slippCount.p3)/(slippCount.p1 + slippCount.p2 + slippCount.p3) - finalSub;
-    cout << "Number of markers available for estimating pnSlippage for " << pnId << " is: " << markerToPSumSlipp.size() - nMissing << endl;
+    if (numberOfMarkers - nMissing < 1)
+        slippage = 0.0;
+    else 
+        slippage = (slippCount.p2 + slippCount.p3)/(slippCount.p1 + slippCount.p2 + slippCount.p3) - finalSub;
+    cout << "Slippage: (" << slippCount.p2 << " + " << slippCount.p3 << ")/(" << slippCount.p1 << " + " << slippCount.p2 <<  " + " <<  slippCount.p3 << ") - " << finalSub << endl;
+    cout << "Number of markers available for estimating pnSlippage for " << pnId << " is: " << numberOfMarkers - nMissing << endl;
     outputFile << pnId << "\t" << slippage << endl;    
     return 0;    
 }

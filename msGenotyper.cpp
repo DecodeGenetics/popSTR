@@ -131,7 +131,7 @@ void fillProblemX(int idx, AttributeLine currentLine, problem& myProb)
     myProb.x[idx][8].index = 9;
     myProb.x[idx][8].value = currentLine.wasUnaligned;
     myProb.x[idx][9].index = -1; // This is to indicate that there aren't any more attributes to read in.
-    myProb.x[idx][9].value = 0;    
+    myProb.x[idx][9].value = 0;
 }
 
 double getPval(Marker marker, AttributeLine currentLine)
@@ -173,7 +173,7 @@ AttributeLine parseNextLine(float winner, float second, ifstream& attributeFile,
         currentLine.ratioOver20After = lexicalCast<float>(firstLine[7]);
         currentLine.sequenceLength = lexicalCast<unsigned int>(firstLine[8]);
         currentLine.wasUnaligned = lexicalCast<bool>(firstLine[9]);        
-        currentLine.repSeq = firstLine[10];        
+        currentLine.repSeq = firstLine[10]; 
     }
     else
     {
@@ -922,10 +922,9 @@ int main(int argc, char const ** argv)
                     append(modelAndLabelDir,PnId);
                     append(modelAndLabelDir,"labels");
                     append(modelAndLabelDir, prevItNumStr);
-                    labelFile.open(toCString(modelAndLabelDir));
-                    cout << "Path to label file: " << modelAndLabelDir << endl; 
+                    labelFile.open(toCString(modelAndLabelDir)); 
                     if(labelFile.fail())
-                        cout << "Could not open label file" << endl;
+                        cout << "Could not open label file: " << modelAndLabelDir << endl;
                     modelAndLabelDir = argv[7];
                 }          
             }
@@ -961,6 +960,7 @@ int main(int argc, char const ** argv)
                     if (markerToSizeAndModel[marker].i2 == NULL || markerToSizeAndModel.count(marker) == 0)
                     {
                         append(modelAndLabelDir, marker.chrom);
+                        append(modelAndLabelDir, "_");
                         stringstream startStr;
                         startStr << marker.start;
                         append(modelAndLabelDir, startStr.str());
@@ -986,7 +986,7 @@ int main(int argc, char const ** argv)
                     if (i == 0)
                         currentLine = parseNextLine(winner, second, attributeFile, marker, PnId, PnAndMarkerToGenotype, numberOfWordsAndWords.i2, true, loadModAndLab, enoughReads);
                     else 
-                        currentLine = parseNextLine(winner, second, attributeFile, marker, PnId, PnAndMarkerToGenotype, numberOfWordsAndWords.i2, false, loadModAndLab, enoughReads);
+                        currentLine = parseNextLine(winner, second, attributeFile, marker, PnId, PnAndMarkerToGenotype, numberOfWordsAndWords.i2, false, loadModAndLab, enoughReads);;
                     if (currentLine.label == 1)
                         markerToAlleles[marker].insert(currentLine.numOfRepeats);
                     appendValue(mapPerMarker[marker],currentLine);
@@ -1352,7 +1352,7 @@ int main(int argc, char const ** argv)
             labelsOut.open(toCString(modelAndLabelDir));
             for (unsigned j = 0; j<length(labels); ++j)
                 labelsOut << labels[j].i1 << "\t" << labels[j].i2 << endl;
-            if (currItNum > 1)
+            /*if (currItNum > 1)
             {
                 modelAndLabelDir = argv[7];
                 append(modelAndLabelDir, PnIds[i]);
@@ -1362,7 +1362,7 @@ int main(int argc, char const ** argv)
                 append(modelAndLabelDir, intervalIndex);               
                 if (remove(toCString(modelAndLabelDir)) !=0)
                     cout << "Remove operation of old labelFile failed with code " << errno << endl;
-            }
+            }*/
             modelAndLabelDir = argv[7];
             labelsOut.close();
         }

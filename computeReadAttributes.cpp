@@ -25,6 +25,7 @@ struct STRinfo {
     Dna5String refBf;
     Dna5String refAf;
     Dna5String refRepSeq;
+    double refRepPurity;
 } ;
 
 //Structure to store marker information
@@ -340,11 +341,15 @@ Pair<Pair<Pair<CharString>,int>,ReadInfo> computeReadInfo(BamAlignmentRecord& re
         cout << "AlignmentScore before: " << (float)scoreBf/(float)startCoord << endl;
     if (rightFlank > 0)
         cout << "AlignmentScore after: " << (float)scoreAf/(float)(length(after)-endCoord-1) << endl;
-    cout << "Infix command is: infix(" << startCoord << "," << oldStartCoord+endCoord+1 << ")" << endl;*/
+    cout << "Infix command is: infix(" << startCoord << "," << oldStartCoord+endCoord+1 << ")" << endl;
+    cout << "Repeat purity: " << getPurity(markerInfo.motif,infix(record.seq, startCoord, oldStartCoord+endCoord+1)) << endl;
+    cout << "Reference repeat purity: " << getPurity(markerInfo.motif, markerInfo.refRepSeq) << endl;*/
+    double refRepPurity = markerInfo.refRepPurity;
+    double readPurity = getPurity(markerInfo.motif,infix(record.seq, startCoord, oldStartCoord+endCoord+1));
     bool startOk = false;
     bool endOk = false;
     bool purityOk = false;
-    if (startCoord >= oldStartCoord + endCoord)
+    if (startCoord >= oldStartCoord + endCoord || ((oldStartCoord+endCoord+1)-startCoord < maxRepeatLength && flankSum>=2*minFlank && (leftFlank < 3 || rightFlank < 3)))
     {
         //cout << "Start coordinate is larger than end coordinate, can't use this read." << endl;
         coordinates.i1.i1 = startCoord;
@@ -367,16 +372,18 @@ Pair<Pair<Pair<CharString>,int>,ReadInfo> computeReadInfo(BamAlignmentRecord& re
         startOk = true;
     if ((endCoord >= length(markerInfo.motif)*repeatNumbers[length(markerInfo.motif)]-1)&&(length(source(row(alignAfter,1)))-endCoord > minFlank))
         endOk = true;
-    if (getPurity(markerInfo.motif,infix(record.seq, startCoord, oldStartCoord+endCoord+1))>0.6)
+    if (readPurity>(0.6*refRepPurity))
         purityOk = true;
-    
-    //I allow only 3 aligning bases on either side if I have more than 16 aligned bases in total.
+    //I allow only 3 aligning bases on either side if I have more than 2*minFlank aligned bases in total.
     if (flankSum >= 2*minFlank && leftFlank >= 3 && rightFlank >= 3)
     {
         startOk = true;
         endOk = true;
-    }    
-    if (leftFlank < 3 && flankSum>=2*minFlank && (float)scoreAf/(float)(length(after)-endCoord)>0.7 && getPurity(markerInfo.motif,infix(record.seq, startCoord, oldStartCoord+endCoord+1))>0.7 && (oldStartCoord+endCoord+1)-startCoord >= maxRepeatLength)
+    } 
+    /*cout << "Start ok: " << startOk << endl;
+    cout << "End ok: " << endOk << endl;
+    cout << "Purity ok: " << purityOk << endl;   */
+    if (leftFlank < 3 && flankSum>=2*minFlank && (float)scoreAf/(float)(length(after)-endCoord)>0.7 && readPurity>(0.7*refRepPurity) && (oldStartCoord+endCoord+1)-startCoord >= maxRepeatLength)
     {
         //cout << "Am making greater than allele on left end." << endl;
         coordinates.i1.i1 = startCoord;
@@ -392,7 +399,7 @@ Pair<Pair<Pair<CharString>,int>,ReadInfo> computeReadInfo(BamAlignmentRecord& re
     }
     else
     {
-        if (rightFlank < 3 && flankSum>=2*minFlank && (float)scoreBf/(float)startCoord>0.7 && getPurity(markerInfo.motif,infix(record.seq, startCoord, oldStartCoord+endCoord+1))>0.7 && (oldStartCoord+endCoord+1)-startCoord >= maxRepeatLength)
+        if (rightFlank < 3 && flankSum>=2*minFlank && (float)scoreBf/(float)startCoord>0.7 && readPurity>(0.7*refRepPurity) && (oldStartCoord+endCoord+1)-startCoord >= maxRepeatLength)
         {
             //cout << "Am making greater than allele on right end." << endl;
             coordinates.i1.i1 = startCoord;
@@ -401,7 +408,6 @@ Pair<Pair<Pair<CharString>,int>,ReadInfo> computeReadInfo(BamAlignmentRecord& re
             mapValue.ratioAf = 0;
             //cout << "Infix command is: infix(" << coordinates.i1.i1 << "," << oldStartCoord+coordinates.i1.i2+1 << ")" << endl; 
             repeatRegion = infix(record.seq, coordinates.i1.i1, oldStartCoord+coordinates.i1.i2+1);
-            //Make numOfRepeats negative to indicate that they were found at the end of the allele
             mapValue.numOfRepeats = (float)maxRepeatLength/(float)length(markerInfo.motif);
             mapValue.ratioOver20In = findRatioOver20(infix(qualString, coordinates.i1.i1, oldStartCoord+coordinates.i1.i2+1));
             mapValue.ratioOver20After = 0;
@@ -409,7 +415,7 @@ Pair<Pair<Pair<CharString>,int>,ReadInfo> computeReadInfo(BamAlignmentRecord& re
         }
         else
         {
-            if (rightFlank < 3 && leftFlank < 3 && getPurity(markerInfo.motif,record.seq)>0.8 && (oldStartCoord+endCoord+1)-startCoord >= maxRepeatLength)
+            if (rightFlank < 3 && leftFlank < 3 && getPurity(markerInfo.motif,record.seq)>(0.8*refRepPurity) && (oldStartCoord+endCoord+1)-startCoord >= maxRepeatLength)
             {
                 //cout << "Am making a SUPER allele." << endl;
                 coordinates.i1.i1 = 0;
@@ -440,7 +446,10 @@ Pair<Pair<Pair<CharString>,int>,ReadInfo> computeReadInfo(BamAlignmentRecord& re
                         mapValue.numOfRepeats = (float)maxRepeatLength/(float)length(markerInfo.motif);
                     //If I find less repeats than the required minimum (depending on the motif length) then I don't use the read
                     if (ceil(mapValue.numOfRepeats) < repeatNumbers[length(markerInfo.motif)])
+                    {
+                        //cout << "Not enough repeats." << endl;
                         mapValue.numOfRepeats = 666;
+                    }
                     mapValue.ratioOver20In = findRatioOver20(infix(qualString, coordinates.i1.i1, oldStartCoord+coordinates.i1.i2+1));
                     mapValue.ratioOver20After = findRatioOver20(suffix(suffix(qualString, oldStartCoord),coordinates.i1.i2+1));
                     mapValue.purity = getPurity(markerInfo.motif,repeatRegion);
@@ -448,6 +457,7 @@ Pair<Pair<Pair<CharString>,int>,ReadInfo> computeReadInfo(BamAlignmentRecord& re
                 //Otherwise I can't use the read so I set numOfRepeats to 666
                 else
                 {
+                    //cout << "Setting num of repeats to 666 in the last else statement." << endl;
                     coordinates.i1.i1 = startCoord;
                     coordinates.i1.i2 = endCoord;
                     mapValue.ratioBf = 0;
@@ -491,8 +501,7 @@ Pair<Pair<Pair<CharString>,int>,ReadInfo> computeReadInfo(BamAlignmentRecord& re
     TRow &row2B = row(alignBefore,1);
     
     //Check location shift
-    mapValue.locationShift = abs(record.beginPos - (markerInfo.STRstart - 1000 + toViewPosition(row2B, 0)));
-    
+    mapValue.locationShift = abs(record.beginPos - (markerInfo.STRstart - 1000 + toViewPosition(row2B, 0)));    
     return Pair<Pair<Pair<CharString>,int>,ReadInfo>(mapKey,mapValue);
 }
 
@@ -590,6 +599,7 @@ int main(int argc, char const ** argv)
         markerFile >> refRepSeq;
         currInfo.refRepSeq = refRepSeq;
         currInfo.refRepeatNum = (float)refRepSeq.length()/(float)motifString.length();
+        currInfo.refRepPurity = getPurity(currInfo.motif, currInfo.refRepSeq);
         if (currInfo.STRend - currInfo.STRstart < 151 - 2*minFlank)
             appendValue(markers, currInfo);
     }

@@ -729,6 +729,8 @@ int main(int argc, char const ** argv)
     int startCoord = lexicalCast<int>(argv[3]), endCoord = lexicalCast<int>(argv[4]);
     CharString attributePath = argv[1], intervalIndex = argv[5], markerSlippageFile = argv[6];
     ifstream pnSlippageFile(argv[2]);
+    if(pnSlippageFile.fail())        
+        cout << "Unable to locate pnSlippageFile @ " << argv[2] << endl;
     append(markerSlippageFile, "_");
     append(markerSlippageFile, intervalIndex);
     ofstream markerSlippageOut(toCString(markerSlippageFile)); 
@@ -755,12 +757,22 @@ int main(int argc, char const ** argv)
     Pair<int, String<string> > numberOfWordsAndWords;
     
     //Iterate over all Pns I have slippage for and read from attribute files in the given interval
-    map<string, double>::const_iterator pnEnd = pnToSize.end(); 
+    map<string, double>::const_iterator pnEnd = pnToSize.end();
+    int nProcessedPns = 0;
     for (map<string, double>::iterator pnStart = pnToSize.begin(); pnStart != pnEnd; ++pnStart)
     {
         PnId = pnStart->first;
         append(attributePath, PnId);
         ifstream attributeFile(toCString(attributePath));
+        if (attributeFile.fail())
+        {
+            cout << "Unable to locate attribute file for " << PnId << " at " << attributePath << endl;
+            attributePath = argv[1];
+            continue;
+        }
+        ++nProcessedPns;
+        if (nProcessedPns % 1000==0)
+            cout << "Working on pn number: " << nProcessedPns << endl;
         while (!attributeFile.eof())
         {
             getline (attributeFile,nextLine);
@@ -1004,8 +1016,6 @@ int main(int argc, char const ** argv)
                         markerToAlleles[it->first].insert(changed.i1.genotype.i1);
                         markerToAlleles[it->first].insert(changed.i1.genotype.i2);
                     }
-                    if (changed.i1.genotype.i1 > 23 || changed.i1.genotype.i2 > 23)
-                        cout << "Pn with big Allele: " << PnId << " genotype is: " << changed.i1.genotype.i1 << "/"  << changed.i1.genotype.i2 << endl;
                     ++markerToAlleleFreqs[it->first].i1[changed.i1.genotype.i1];
                     ++markerToAlleleFreqs[it->first].i1[changed.i1.genotype.i2];
                     //If I am estimating the marker slippage then I should update map from Pn to labels. (before I update PnId to currentLine.PnId)
