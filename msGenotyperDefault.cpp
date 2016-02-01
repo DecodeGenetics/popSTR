@@ -283,7 +283,7 @@ Pair<GenotypeInfo, Pair<bool> > determineGenotype(String<AttributeLine> reads, d
             if (i == 0)
             {
                 ++returnValue.alleleToFreq[readToCheck.numOfRepeats];
-                if (length(reads) >= 5)
+                if (length(reads) >= 10)
                     returnValue.pValueSum += readToCheck.pValue;
                 //Debugging code
                 //cout << "P-value of read " << j << " with " << readToCheck.numOfRepeats << " repeats:  " << readToCheck.pValue << endl;
@@ -393,7 +393,7 @@ void relabelReads(String<AttributeLine>& readsToRelabel, int start, int end, Pai
         {
             readsToRelabel[i].label = 1;
             ++markerToSizeAndModel[marker].i1.p1.i1;
-            if (numOfReads >= 5)
+            if (numOfReads >= 10)
                 markerToSizeAndModel[marker].i1.p1.i2 += readsToRelabel[i].pValue;                
         }
         else 
@@ -403,14 +403,14 @@ void relabelReads(String<AttributeLine>& readsToRelabel, int start, int end, Pai
                 readsToRelabel[i].label = 2;
                 ++markerToSizeAndModel[marker].i1.p2.i1;
                 markerToStepSum[marker] += (float)marker.motif.size();
-                if (numOfReads >= 5)
+                if (numOfReads >= 10)
                     markerToSizeAndModel[marker].i1.p2.i2 += readsToRelabel[i].pValue;                    
             }
             else
             { 
                 readsToRelabel[i].label = -1;
                 ++markerToSizeAndModel[marker].i1.p3.i1;
-                if (numOfReads >= 5)             
+                if (numOfReads >= 10)             
                     markerToSizeAndModel[marker].i1.p3.i2 += readsToRelabel[i].pValue;
                 float diff1, diff2;
                 diff1 = fabs(readsToRelabel[i].numOfRepeats - newGenotype.i1);
@@ -809,20 +809,23 @@ int main(int argc, char const ** argv)
                 markers.insert(marker);
                 winner = lexicalCast<float>(numberOfWordsAndWords.i2[7]);
                 second = lexicalCast<float>(numberOfWordsAndWords.i2[8]);
+                markerToAlleles[marker].insert(winner);
+                markerToAlleles[marker].insert(second);
                 
             }
             if (numberOfWordsAndWords.i1 == 11) 
             {
-                if (numberOfReads < 5)                
-                    enoughReads = false;                
+                if (numberOfReads < 10)
+                {
+                    PnAndMarkerToGenotype[Pair<string,Marker>(PnId, marker)].pValueSum = 0;
+                    enoughReads = false;
+                }
                 for (unsigned i = 0; i < numberOfReads; ++i)
                 {
                     if (i == 0)
                         currentLine = parseNextLine(winner, second, attributeFile, marker, PnId, PnAndMarkerToGenotype, numberOfWordsAndWords.i2, true, enoughReads);
                     else 
                         currentLine = parseNextLine(winner, second, attributeFile, marker, PnId, PnAndMarkerToGenotype, numberOfWordsAndWords.i2, false, enoughReads);
-                    if (currentLine.label == 1)
-                        markerToAlleles[marker].insert(currentLine.numOfRepeats);
                     appendValue(mapPerMarker[marker],currentLine);
                 }
                 enoughReads = true;                                    
