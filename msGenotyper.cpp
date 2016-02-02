@@ -8,8 +8,6 @@
 #include <numeric>
 #include <sstream>
 #include <sys/stat.h>
-#include <boost/math/distributions/poisson.hpp>
-#include <boost/math/distributions/geometric.hpp>
 #include <seqan/file.h>
 #include <seqan/find.h>
 #include <seqan/basic.h>
@@ -293,8 +291,7 @@ int findMaxIndex(String<long double> probs)
     return maxIndex;
 }
 
-/* same as R dgeom */
-static float dgeom(int diff, double psucc) 
+float dgeom(int diff, double psucc)
 {
     if (diff < 0) 
         return 0;
@@ -304,6 +301,17 @@ static float dgeom(int diff, double psucc)
         p = p*(1-psucc);
     }
     return p;
+}
+
+float dpois(int step, float lambda) {
+  if (step < 0) 
+      return 0;
+  float p = exp(-1*lambda);
+  for (int i = 0; i < step; i++) {
+    p = p*lambda;
+    p = p/(i+1);
+  }
+  return p;  
 }
 
 Pair<GenotypeInfo, Pair<bool> > determineGenotype(String<AttributeLine> reads, double markerSlippage, String<Pair<float> > genotypes, int numberOfAlleles, int motifLength, double psucc)
@@ -318,13 +326,9 @@ Pair<GenotypeInfo, Pair<bool> > determineGenotype(String<AttributeLine> reads, d
     std::set<float> newGenotypeSet; 
     String<long double> probs;
     double errorProbSum = 0;
-    double lengthSlippage;
     resize(probs, length(genotypes));
     bool isHomo, enoughDistance = true;
-    float posNegSlipp = 1;
-    float posNegSlipp2 = 1;
-    float diff;
-    float diff2;
+    float diff, diff2, lambda = std::max((double)0.001,markerSlippage), posNegSlipp = 1, posNegSlipp2 = 1;
     int indexOfWinner, indexOfSecond;    
     for (unsigned i=0; i<length(genotypes); ++i)
     {
@@ -334,8 +338,7 @@ Pair<GenotypeInfo, Pair<bool> > determineGenotype(String<AttributeLine> reads, d
         for (unsigned j=0; j<length(reads); ++j)
         {
             posNegSlipp = 1;
-            posNegSlipp2 = 1;
-            boost::math::poisson_distribution<> myPoiss(std::max((double)0.01,markerSlippage));
+            posNegSlipp2 = 1;            
             readToCheck = reads[j];
             if (i == 0)
             {
@@ -360,16 +363,16 @@ Pair<GenotypeInfo, Pair<bool> > determineGenotype(String<AttributeLine> reads, d
                 if (fmod(diff,1.0)>0.0 && useGeom)
                 {
                     if (diff < 1.0)
-                        probs[i] *= (readToCheck.pValue * dgeom(static_cast<int>(diff*motifLength), psucc) * pdf(myPoiss, 0) * posNegSlipp + ((double)(1.0-readToCheck.pValue)/(double)numberOfAlleles));
+                        probs[i] *= (readToCheck.pValue * dgeom(static_cast<int>(diff*motifLength), psucc) * dpois(0, lambda) * posNegSlipp + ((double)(1.0-readToCheck.pValue)/(double)numberOfAlleles));
                     else                    
-                        probs[i] *= (readToCheck.pValue * dgeom(static_cast<int>((diff-(float)floor(diff))*motifLength), psucc) * pdf(myPoiss, floor(diff)) * posNegSlipp + ((double)(1.0-readToCheck.pValue)/(double)numberOfAlleles));                    
+                        probs[i] *= (readToCheck.pValue * dgeom(static_cast<int>((diff-(float)floor(diff))*motifLength), psucc) * dpois(floor(diff), lambda) * posNegSlipp + ((double)(1.0-readToCheck.pValue)/(double)numberOfAlleles));                    
                 }
                 else
                 {
                     if (!(fmod(diff,1.0)>0.0) && useGeom)
-                        probs[i] *= (readToCheck.pValue * pdf(myPoiss, diff) * dgeom(0, psucc) * posNegSlipp + ((double)(1.0-readToCheck.pValue)/(double)numberOfAlleles));
+                        probs[i] *= (readToCheck.pValue * dpois(floor(diff), lambda) * dgeom(0, psucc) * posNegSlipp + ((double)(1.0-readToCheck.pValue)/(double)numberOfAlleles));
                     else
-                        probs[i] *= (readToCheck.pValue * pdf(myPoiss, diff) * posNegSlipp + ((double)(1.0-readToCheck.pValue)/(double)numberOfAlleles));
+                        probs[i] *= (readToCheck.pValue * dpois(floor(diff), lambda) * posNegSlipp + ((double)(1.0-readToCheck.pValue)/(double)numberOfAlleles));
                 }
                 //cout << " = " << probs[i] << endl;
             }
@@ -391,34 +394,34 @@ Pair<GenotypeInfo, Pair<bool> > determineGenotype(String<AttributeLine> reads, d
                 if (fmod(diff,1.0)>0.0 && fmod(diff2,1.0)>0.0 && useGeom)
                 {
                     if (diff < 1.0 && diff2 < 1.0)
-                        probs[i] *= (readToCheck.pValue * 0.5 * (dgeom(static_cast<int>(diff*motifLength), psucc) * pdf(myPoiss, 0) * posNegSlipp + dgeom(static_cast<int>(diff2*motifLength), psucc) * pdf(myPoiss, 0) * posNegSlipp2) + ((double)(1.0-readToCheck.pValue)/(double)numberOfAlleles));
+                        probs[i] *= (readToCheck.pValue * 0.5 * (dgeom(static_cast<int>(diff*motifLength), psucc) * dpois(0, lambda) * posNegSlipp + dgeom(static_cast<int>(diff2*motifLength), psucc) * dpois(0, lambda) * posNegSlipp2) + ((double)(1.0-readToCheck.pValue)/(double)numberOfAlleles));
                     if (diff < 1.0 && !(diff2 < 1.0))
-                        probs[i] *= (readToCheck.pValue * 0.5 * (dgeom(static_cast<int>(diff*motifLength), psucc) * pdf(myPoiss, 0) * posNegSlipp + dgeom(static_cast<int>((diff2-(float)floor(diff2))*motifLength), psucc) * pdf(myPoiss, floor(diff2)) * posNegSlipp2) + ((double)(1.0-readToCheck.pValue)/(double)numberOfAlleles));
+                        probs[i] *= (readToCheck.pValue * 0.5 * (dgeom(static_cast<int>(diff*motifLength), psucc) * dpois(0, lambda) * posNegSlipp + dgeom(static_cast<int>((diff2-(float)floor(diff2))*motifLength), psucc) * dpois(floor(diff2), lambda) * posNegSlipp2) + ((double)(1.0-readToCheck.pValue)/(double)numberOfAlleles));
                     if (!(diff < 1.0) && diff2 < 1.0)
-                        probs[i] *= (readToCheck.pValue * 0.5 * (dgeom(static_cast<int>((diff-(float)floor(diff))*motifLength), psucc) * pdf(myPoiss, floor(diff)) * posNegSlipp + dgeom(static_cast<int>(diff2*motifLength), psucc) * pdf(myPoiss, 0) * posNegSlipp2) + ((double)(1.0-readToCheck.pValue)/(double)numberOfAlleles));
+                        probs[i] *= (readToCheck.pValue * 0.5 * (dgeom(static_cast<int>((diff-(float)floor(diff))*motifLength), psucc) * dpois(floor(diff), lambda) * posNegSlipp + dgeom(static_cast<int>(diff2*motifLength), psucc) * dpois(0, lambda) * posNegSlipp2) + ((double)(1.0-readToCheck.pValue)/(double)numberOfAlleles));
                     else
-                        probs[i] *= (readToCheck.pValue * 0.5 * (dgeom(static_cast<int>((diff-(float)floor(diff))*motifLength), psucc) * pdf(myPoiss, floor(diff)) * posNegSlipp + dgeom(static_cast<int>((diff2-(float)floor(diff2))*motifLength), psucc) * pdf(myPoiss, floor(diff2)) * posNegSlipp2) + ((double)(1.0-readToCheck.pValue)/(double)numberOfAlleles));
+                        probs[i] *= (readToCheck.pValue * 0.5 * (dgeom(static_cast<int>((diff-(float)floor(diff))*motifLength), psucc) * dpois(floor(diff), lambda) * posNegSlipp + dgeom(static_cast<int>((diff2-(float)floor(diff2))*motifLength), psucc) * dpois(floor(diff2), lambda) * posNegSlipp2) + ((double)(1.0-readToCheck.pValue)/(double)numberOfAlleles));
                 }
                 if (fmod(diff,1.0)>0.0 && !fmod(diff2,1.0)>0.0 && useGeom)
                 {
                     if (!(diff < 1.0))    
-                        probs[i] *= (readToCheck.pValue * 0.5 * (dgeom(static_cast<int>((diff-(float)floor(diff))*motifLength), psucc) * pdf(myPoiss, floor(diff)) * posNegSlipp + pdf(myPoiss, diff2) * dgeom(0, psucc) * posNegSlipp2) + ((double)(1.0-readToCheck.pValue)/(double)numberOfAlleles));
+                        probs[i] *= (readToCheck.pValue * 0.5 * (dgeom(static_cast<int>((diff-(float)floor(diff))*motifLength), psucc) * dpois(floor(diff), lambda) * posNegSlipp + dpois(floor(diff2), lambda) * dgeom(0, psucc) * posNegSlipp2) + ((double)(1.0-readToCheck.pValue)/(double)numberOfAlleles));
                     else
-                        probs[i] *= (readToCheck.pValue * 0.5 * (dgeom(static_cast<int>(diff*motifLength), psucc) * posNegSlipp + pdf(myPoiss, diff2) * dgeom(0, psucc) *posNegSlipp2) + ((double)(1.0-readToCheck.pValue)/(double)numberOfAlleles));
+                        probs[i] *= (readToCheck.pValue * 0.5 * (dgeom(static_cast<int>(diff*motifLength), psucc) * dpois(0, lambda) * posNegSlipp + dpois(floor(diff2), lambda) * dgeom(0, psucc) * posNegSlipp2) + ((double)(1.0-readToCheck.pValue)/(double)numberOfAlleles));
                 }
                 if (!fmod(diff,1.0)>0.0 && fmod(diff2,1.0)>0.0 && useGeom)
                 {
                     if (!(diff2 < 1.0))
-                        probs[i] *= (readToCheck.pValue * 0.5 * (pdf(myPoiss, diff) * dgeom(0, psucc) * posNegSlipp + dgeom(static_cast<int>((diff2-(float)floor(diff2))*motifLength), psucc) * pdf(myPoiss, floor(diff2)) * posNegSlipp2) + ((double)(1.0-readToCheck.pValue)/(double)numberOfAlleles));
+                        probs[i] *= (readToCheck.pValue * 0.5 * (dpois(floor(diff), lambda) * dgeom(0, psucc) * posNegSlipp + dgeom(static_cast<int>((diff2-(float)floor(diff2))*motifLength), psucc) * dpois(floor(diff2), lambda) * posNegSlipp2) + ((double)(1.0-readToCheck.pValue)/(double)numberOfAlleles));
                     else
-                        probs[i] *= (readToCheck.pValue * 0.5 * (pdf(myPoiss, diff) * dgeom(0, psucc) * posNegSlipp + dgeom(static_cast<int>(diff2*motifLength), psucc) * posNegSlipp2) + ((double)(1.0-readToCheck.pValue)/(double)numberOfAlleles));
+                        probs[i] *= (readToCheck.pValue * 0.5 * (dpois(floor(diff), lambda) * dgeom(0, psucc) * posNegSlipp + dgeom(static_cast<int>(diff2*motifLength), psucc) * dpois(0, lambda) * posNegSlipp2) + ((double)(1.0-readToCheck.pValue)/(double)numberOfAlleles));
                 }
                 else
                 {
                     if (useGeom)
-                        probs[i] *= (readToCheck.pValue * 0.5 * (pdf(myPoiss, diff) * dgeom(0, psucc) * posNegSlipp + pdf(myPoiss, diff2) * dgeom(0, psucc) * posNegSlipp2) + ((double)(1.0-readToCheck.pValue)/(double)numberOfAlleles));
+                        probs[i] *= (readToCheck.pValue * 0.5 * (dpois(floor(diff), lambda) * dgeom(0, psucc) * posNegSlipp + dpois(floor(diff2), lambda) * dgeom(0, psucc) * posNegSlipp2) + ((double)(1.0-readToCheck.pValue)/(double)numberOfAlleles));
                     else
-                        probs[i] *= (readToCheck.pValue * 0.5 * (pdf(myPoiss, diff) * posNegSlipp + pdf(myPoiss, diff2) * posNegSlipp2) + ((double)(1.0-readToCheck.pValue)/(double)numberOfAlleles));
+                        probs[i] *= (readToCheck.pValue * 0.5 * (dpois(floor(diff), lambda) * posNegSlipp + dpois(floor(diff2), lambda) * posNegSlipp2) + ((double)(1.0-readToCheck.pValue)/(double)numberOfAlleles));
                 }
             }
         }
