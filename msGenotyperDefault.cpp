@@ -8,8 +8,6 @@
 #include <numeric>
 #include <sstream>
 #include <sys/stat.h>
-#include <boost/math/distributions/poisson.hpp>
-#include <boost/math/distributions/geometric.hpp>
 #include <seqan/file.h>
 #include <seqan/find.h>
 #include <seqan/basic.h>
@@ -249,7 +247,30 @@ int findMaxIndex(String<long double> probs)
     return maxIndex;
 }
 
-Pair<GenotypeInfo, Pair<bool> > determineGenotype(String<AttributeLine> reads, double markerSlippage, String<Pair<float> > genotypes, int numberOfAlleles, int motifLength, boost::math::geometric_distribution<> myGeom)
+float dgeom(int diff, double psucc) 
+{
+    if (diff < 0) 
+        return 0;
+    double p = psucc;
+    for (int i = 0; i < diff; i++) 
+    {
+        p = p*(1-psucc);
+    }
+    return p;
+}
+
+float dpois(int step, float mean) {
+  if (step < 0) 
+    return 0;
+  float p = exp(-1*mean);
+  for (int i = 0; i < step; i++) {
+    p = p*mean;
+    p = p/(i+1);
+  }
+  return p;  
+}
+
+Pair<GenotypeInfo, Pair<bool> > determineGenotype(String<AttributeLine> reads, double markerSlippage, String<Pair<float> > genotypes, int numberOfAlleles, int motifLength, double psucc)
 {
     GenotypeInfo returnValue;
     returnValue.pValueSum = 0;
@@ -257,17 +278,12 @@ Pair<GenotypeInfo, Pair<bool> > determineGenotype(String<AttributeLine> reads, d
     returnValue.numOfReads = length(reads);
     Pair<float> genotypeToCheck;
     AttributeLine readToCheck;
-    std::set<float> currentGenotype;
-    std::set<float> newGenotypeSet; 
+    std::set<float> currentGenotype, newGenotypeSet; 
     String<long double> probs;
-    double errorProbSum = 0;
-    double lengthSlippage;
+    double errorProbSum = 0, lengthSlippage;
     resize(probs, length(genotypes));
     bool isHomo, enoughDistance = true;
-    float posNegSlipp = 1;
-    float posNegSlipp2 = 1;
-    float diff;
-    float diff2;
+    float posNegSlipp = 1, posNegSlipp2 = 1, lambda = std::max((double)0.01,markerSlippage), diff, diff2;
     int indexOfWinner, indexOfSecond;    
     for (unsigned i=0; i<length(genotypes); ++i)
     {
@@ -278,7 +294,6 @@ Pair<GenotypeInfo, Pair<bool> > determineGenotype(String<AttributeLine> reads, d
         {
             posNegSlipp = 1;
             posNegSlipp2 = 1;
-            boost::math::poisson_distribution<> myPoiss(std::max((double)0.01,markerSlippage));
             readToCheck = reads[j];
             if (i == 0)
             {
@@ -300,15 +315,10 @@ Pair<GenotypeInfo, Pair<bool> > determineGenotype(String<AttributeLine> reads, d
                 //Debugging code
                 //cout << "Diff for homozygous genotype " << genotypeToCheck.i1 << " from read with " << readToCheck.numOfRepeats << " repeats is: " << diff << endl;
                 //cout << "Update of genotype probability: " << probs[i] << " *= (" << readToCheck.pValue << "*" << pdf(myPoiss, abs(diff)) << "*" << posNegSlipp << "+ (" << (double)(1.0-readToCheck.pValue)/(double)numberOfAlleles << "))";
-                if (fmod(diff,1.0)>0.0 && useGeom)
-                {
-                    if (diff < 1.0)
-                        probs[i] *= (readToCheck.pValue * pdf(myGeom, diff*motifLength) * posNegSlipp + ((double)(1.0-readToCheck.pValue)/(double)numberOfAlleles));
-                    else                    
-                        probs[i] *= (readToCheck.pValue * pdf(myGeom, (diff-(float)floor(diff))*motifLength) * pdf(myPoiss, floor(diff)) * posNegSlipp + ((double)(1.0-readToCheck.pValue)/(double)numberOfAlleles));                    
-                }
-                else
-                    probs[i] *= (readToCheck.pValue * pdf(myPoiss, diff) * posNegSlipp + ((double)(1.0-readToCheck.pValue)/(double)numberOfAlleles));
+                if (useGeom)
+                    probs[i] *= (readToCheck.pValue * dgeom(static_cast<int>((diff-(float)floor(diff))*motifLength), psucc) * dpois(floor(diff), lambda) * posNegSlipp + ((double)(1.0-readToCheck.pValue)/(double)numberOfAlleles));
+                else                
+                    probs[i] *= (readToCheck.pValue * dpois(ceil(diff), lambda) * posNegSlipp + ((double)(1.0-readToCheck.pValue)/(double)numberOfAlleles));
                 //cout << " = " << probs[i] << endl;
             }
             else
@@ -326,33 +336,10 @@ Pair<GenotypeInfo, Pair<bool> > determineGenotype(String<AttributeLine> reads, d
                 //Debugging code
                 //cout << "Diffs for heterozygous genotype " << genotypeToCheck.i1 << "/" << genotypeToCheck.i2 << " from read with " << readToCheck.numOfRepeats << " repeats are: " << diff << " and " << diff2 << endl;
                 //cout << "Update of genotype probability: " << probs[i] << " *= (" << readToCheck.pValue << " * (0.5 * " << pdf(myPoiss, abs(diff)) << "*" << posNegSlipp << "+ 0.5 * "<< pdf(myPoiss, abs(diff2)) << "*" << posNegSlipp2 << ") + (" << (double)(1.0-readToCheck.pValue)/(double)numberOfAlleles << "))";
-                if (fmod(diff,1.0)>0.0 && fmod(diff2,1.0)>0.0 && useGeom)
-                {
-                    if (diff < 1.0 && diff2 < 1.0)
-                        probs[i] *= (readToCheck.pValue * 0.5 * (pdf(myGeom, diff*motifLength) * posNegSlipp + pdf(myGeom, diff2*motifLength) * posNegSlipp2) + ((double)(1.0-readToCheck.pValue)/(double)numberOfAlleles));
-                    if (diff < 1.0 && !(diff2 < 1.0))
-                        probs[i] *= (readToCheck.pValue * 0.5 * (pdf(myGeom, diff*motifLength) * posNegSlipp + pdf(myGeom, (diff2-(float)floor(diff2))*motifLength) * pdf(myPoiss, floor(diff2)) * posNegSlipp2) + ((double)(1.0-readToCheck.pValue)/(double)numberOfAlleles));
-                    if (!(diff < 1.0) && diff2 < 1.0)
-                        probs[i] *= (readToCheck.pValue * 0.5 * (pdf(myGeom, (diff-(float)floor(diff))*motifLength) * pdf(myPoiss, floor(diff)) * posNegSlipp + pdf(myGeom, diff2*motifLength) * posNegSlipp2) + ((double)(1.0-readToCheck.pValue)/(double)numberOfAlleles));
-                    else
-                        probs[i] *= (readToCheck.pValue * 0.5 * (pdf(myGeom, (diff-(float)floor(diff))*motifLength) * pdf(myPoiss, floor(diff)) * posNegSlipp + pdf(myGeom, (diff2-(float)floor(diff2))*motifLength) * pdf(myPoiss, floor(diff2)) * posNegSlipp2) + ((double)(1.0-readToCheck.pValue)/(double)numberOfAlleles));
-                }
-                if (fmod(diff,1.0)>0.0 && !fmod(diff2,1.0)>0.0 && useGeom)
-                {
-                    if (!(diff < 1.0))    
-                        probs[i] *= (readToCheck.pValue * 0.5 * (pdf(myGeom, (diff-(float)floor(diff))*motifLength) * pdf(myPoiss, floor(diff)) * posNegSlipp + pdf(myPoiss, diff2) * posNegSlipp2) + ((double)(1.0-readToCheck.pValue)/(double)numberOfAlleles));
-                    else
-                        probs[i] *= (readToCheck.pValue * 0.5 * (pdf(myGeom, diff*motifLength) * posNegSlipp + pdf(myPoiss, diff2) * posNegSlipp2) + ((double)(1.0-readToCheck.pValue)/(double)numberOfAlleles));
-                }
-                if (!fmod(diff,1.0)>0.0 && fmod(diff2,1.0)>0.0 && useGeom)
-                {
-                    if (!(diff2 < 1.0))
-                        probs[i] *= (readToCheck.pValue * 0.5 * (pdf(myPoiss, diff) * posNegSlipp + pdf(myGeom, (diff2-(float)floor(diff2))*motifLength) * pdf(myPoiss, floor(diff2)) * posNegSlipp2) + ((double)(1.0-readToCheck.pValue)/(double)numberOfAlleles));
-                    else
-                        probs[i] *= (readToCheck.pValue * 0.5 * (pdf(myPoiss, diff) * posNegSlipp + pdf(myGeom, diff2*motifLength) * posNegSlipp2) + ((double)(1.0-readToCheck.pValue)/(double)numberOfAlleles));
-                }
-                else 
-                    probs[i] *= (readToCheck.pValue * 0.5 * (pdf(myPoiss, diff) * posNegSlipp + pdf(myPoiss, diff2) * posNegSlipp2) + ((double)(1.0-readToCheck.pValue)/(double)numberOfAlleles));                
+                if (useGeom)
+                    probs[i] *= (readToCheck.pValue * 0.5 * (dgeom(static_cast<int>((diff-(float)floor(diff))*motifLength), psucc) * dpois(floor(diff), lambda) * posNegSlipp + dgeom(static_cast<int>((diff2-(float)floor(diff2))*motifLength), psucc) * dpois(floor(diff2), lambda) * posNegSlipp2) + ((double)(1.0-readToCheck.pValue)/(double)numberOfAlleles));    
+                else
+                    probs[i] *= (readToCheck.pValue * 0.5 * (dpois(ceil(diff), lambda) * posNegSlipp + dpois(ceil(diff2), lambda) * posNegSlipp2) + ((double)(1.0-readToCheck.pValue)/(double)numberOfAlleles));                
             }
         }
         //Debugging code
@@ -933,7 +920,6 @@ int main(int argc, char const ** argv)
             cout << "Average step size modulo the period: fmod(" << markerToStepSum[thisMarker] << "/" << length(currentMarker) << ",1.0)" << endl;
             cout << "P for geometric distribution is: " << "1.0/(" << fmod(markerToStepSum[thisMarker]/(float)length(currentMarker),1.0) << "+1.0) = " << 1.0/(fmod(markerToStepSum[thisMarker]/(float)length(currentMarker),1.0)+1.0) << endl;*/
             double geomP = 1/(fmod(markerToStepSum[thisMarker]/(float)length(currentMarker),1.0)+1);
-            boost::math::geometric_distribution<> myGeom(std::max((double)0.001,geomP));
             allelesAtMarker = markerToAlleles[thisMarker];                        
             numOfAlleles = allelesAtMarker.size();
             //cout << "Number of alleles at the marker: " << numOfAlleles << endl;
@@ -1009,7 +995,7 @@ int main(int argc, char const ** argv)
                     }
                     genotypesToConsider = makeGenotypes(allelesToConsider);  
                     //make decision about genotype for PnId at the current marker.        
-                    changed = determineGenotype(reads, markerToSizeAndModel[it->first].i2/2.0+pnToSize[PnId], genotypesToConsider, numOfAlleles, it->first.motif.size(), myGeom);                   
+                    changed = determineGenotype(reads, markerToSizeAndModel[it->first].i2/2.0+pnToSize[PnId], genotypesToConsider, numOfAlleles, it->first.motif.size(), geomP);                   
                     if (changed.i2.i1)
                         ++updatedPns;
                     relabelReads(currentMarker, i-length(reads), i, changed.i1.genotype, it->first);
@@ -1051,7 +1037,7 @@ int main(int argc, char const ** argv)
                 allelesToConsider.insert(currAllele);
             }
             genotypesToConsider = makeGenotypes(allelesToConsider);
-            changed = determineGenotype(reads, markerToSizeAndModel[it->first].i2+pnToSize[PnId], genotypesToConsider, numOfAlleles, it->first.motif.size(), myGeom);
+            changed = determineGenotype(reads, markerToSizeAndModel[it->first].i2+pnToSize[PnId], genotypesToConsider, numOfAlleles, it->first.motif.size(), geomP);
             if (changed.i2.i1)
                 ++updatedPns;
             relabelReads(currentMarker, length(currentMarker)-length(reads), length(currentMarker), changed.i1.genotype, it->first);
