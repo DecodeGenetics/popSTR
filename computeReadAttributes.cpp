@@ -336,20 +336,25 @@ Pair<Pair<Pair<CharString>,int>,ReadInfo> computeReadInfo(BamAlignmentRecord& re
     int flankSum = startCoord + length(source(row(alignAfter,1)))-endCoord - 1;
     int leftFlank = startCoord;
     int rightFlank = length(source(row(alignAfter,1)))-endCoord - 1;
-    /*cout << "FlankSum: " << flankSum << " leftFlank: " << leftFlank << " rightFlank: " << rightFlank << endl;
-    if (leftFlank > 0)
-        cout << "AlignmentScore before: " << (float)scoreBf/(float)startCoord << endl;
-    if (rightFlank > 0)
-        cout << "AlignmentScore after: " << (float)scoreAf/(float)(length(after)-endCoord-1) << endl;
-    cout << "Infix command is: infix(" << startCoord << "," << oldStartCoord+endCoord+1 << ")" << endl;
-    cout << "Repeat purity: " << getPurity(markerInfo.motif,infix(record.seq, startCoord, oldStartCoord+endCoord+1)) << endl;
-    cout << "Reference repeat purity: " << getPurity(markerInfo.motif, markerInfo.refRepSeq) << endl;*/
+    /*if (record.qName == "ST-E00133:149:H3GKMCCXX:5:2218:19077:41497")
+    {
+        cout << "FlankSum: " << flankSum << " leftFlank: " << leftFlank << " rightFlank: " << rightFlank << endl;
+        if (leftFlank > 0)
+            cout << "AlignmentScore before: " << (float)scoreBf/(float)startCoord << endl;
+        if (rightFlank > 0)
+            cout << "AlignmentScore after: " << (float)scoreAf/(float)(length(after)-endCoord-1) << endl;
+        cout << "Start coord: " << startCoord << endl;
+        cout << "Old start coord: " << oldStartCoord << endl;
+        cout << "End coord: " << endCoord << endl;
+        cout << "Infix command is: infix(" << startCoord << "," << oldStartCoord+endCoord+1 << ")" << endl;
+        cout << "Repeat purity: " << getPurity(markerInfo.motif,infix(record.seq, startCoord, oldStartCoord+endCoord+1)) << endl;
+        cout << "Reference repeat purity: " << getPurity(markerInfo.motif, markerInfo.refRepSeq) << endl;
+    }*/
     double refRepPurity = markerInfo.refRepPurity;
-    double readPurity = getPurity(markerInfo.motif,infix(record.seq, startCoord, oldStartCoord+endCoord+1));
     bool startOk = false;
     bool endOk = false;
     bool purityOk = false;
-    if (startCoord >= oldStartCoord + endCoord || ((oldStartCoord+endCoord+1)-startCoord < maxRepeatLength && flankSum>=2*minFlank && (leftFlank < 3 || rightFlank < 3)))
+    if (startCoord >= oldStartCoord + endCoord || ((oldStartCoord+endCoord+1)-startCoord < maxRepeatLength && (leftFlank < 4 || rightFlank < 4)))
     {
         //cout << "Start coordinate is larger than end coordinate, can't use this read." << endl;
         coordinates.i1.i1 = startCoord;
@@ -367,23 +372,27 @@ Pair<Pair<Pair<CharString>,int>,ReadInfo> computeReadInfo(BamAlignmentRecord& re
         mapValue.locationShift = 100;
         return Pair<Pair<Pair<CharString>,int>,ReadInfo>(mapKey,mapValue);
     }
+    double readPurity = getPurity(markerInfo.motif,infix(record.seq, startCoord, oldStartCoord+endCoord+1));
     //Check if a minimum number of repeats have been found and whether the flanking area is sufficient for both start and end coordinates
     if ((length(source(row(alignBefore,1)))-(startCoord) >=length(markerInfo.motif)*repeatNumbers[length(markerInfo.motif)]) && (startCoord>=minFlank))
         startOk = true;
     if ((endCoord >= length(markerInfo.motif)*repeatNumbers[length(markerInfo.motif)]-1)&&(length(source(row(alignAfter,1)))-endCoord > minFlank))
         endOk = true;
-    if (readPurity>(0.6*refRepPurity))
+    if (readPurity>(0.75*refRepPurity))
         purityOk = true;
-    //I allow only 3 aligning bases on either side if I have more than 2*minFlank aligned bases in total.
-    if (flankSum >= 2*minFlank && leftFlank >= 3 && rightFlank >= 3)
+    //I allow only 4 aligning bases on either side if I have more than 2*minFlank aligned bases in total.
+    if (flankSum >= 2*minFlank && leftFlank >= 4 && rightFlank >= 4)
     {
         startOk = true;
         endOk = true;
     } 
-    /*cout << "Start ok: " << startOk << endl;
-    cout << "End ok: " << endOk << endl;
-    cout << "Purity ok: " << purityOk << endl;   */
-    if (leftFlank < 3 && flankSum>=2*minFlank && (float)scoreAf/(float)(length(after)-endCoord)>0.7 && readPurity>(0.7*refRepPurity) && (oldStartCoord+endCoord+1)-startCoord >= maxRepeatLength)
+    /*if (record.qName == "ST-E00133:149:H3GKMCCXX:5:2218:19077:41497")
+    {
+        cout << "Start ok: " << startOk << endl;
+        cout << "End ok: " << endOk << endl;
+        cout << "Purity ok: " << purityOk << endl;
+    }*/
+    if (leftFlank < 4 && flankSum>=2*minFlank && (float)scoreAf/(float)(length(after)-endCoord)>0.7 && readPurity>(0.8*refRepPurity) && (oldStartCoord+endCoord+1)-startCoord >= maxRepeatLength)
     {
         //cout << "Am making greater than allele on left end." << endl;
         coordinates.i1.i1 = startCoord;
@@ -399,7 +408,7 @@ Pair<Pair<Pair<CharString>,int>,ReadInfo> computeReadInfo(BamAlignmentRecord& re
     }
     else
     {
-        if (rightFlank < 3 && flankSum>=2*minFlank && (float)scoreBf/(float)startCoord>0.7 && readPurity>(0.7*refRepPurity) && (oldStartCoord+endCoord+1)-startCoord >= maxRepeatLength)
+        if (rightFlank < 4 && flankSum>=2*minFlank && (float)scoreBf/(float)startCoord>0.7 && readPurity>(0.8*refRepPurity) && (oldStartCoord+endCoord+1)-startCoord >= maxRepeatLength)
         {
             //cout << "Am making greater than allele on right end." << endl;
             coordinates.i1.i1 = startCoord;
@@ -415,7 +424,7 @@ Pair<Pair<Pair<CharString>,int>,ReadInfo> computeReadInfo(BamAlignmentRecord& re
         }
         else
         {
-            if (rightFlank < 3 && leftFlank < 3 && getPurity(markerInfo.motif,record.seq)>(0.8*refRepPurity) && (oldStartCoord+endCoord+1)-startCoord >= maxRepeatLength)
+            if (rightFlank < 4 && leftFlank < 4 && getPurity(markerInfo.motif,record.seq)>(0.85*refRepPurity) && (oldStartCoord+endCoord+1)-startCoord >= maxRepeatLength)
             {
                 //cout << "Am making a SUPER allele." << endl;
                 coordinates.i1.i1 = 0;
@@ -501,7 +510,7 @@ Pair<Pair<Pair<CharString>,int>,ReadInfo> computeReadInfo(BamAlignmentRecord& re
     TRow &row2B = row(alignBefore,1);
     
     //Check location shift
-    mapValue.locationShift = abs(record.beginPos - (markerInfo.STRstart - 1000 + toViewPosition(row2B, 0)));    
+    mapValue.locationShift = abs(record.beginPos - (markerInfo.STRstart - 1000 + toViewPosition(row2B, 0)));
     return Pair<Pair<Pair<CharString>,int>,ReadInfo>(mapKey,mapValue);
 }
 
@@ -603,6 +612,7 @@ int main(int argc, char const ** argv)
         if (currInfo.STRend - currInfo.STRstart < 151 - 2*minFlank)
             appendValue(markers, currInfo);
     }
+    cout << "Finished reading marker Info, number of markers: " << length(markers) << endl; 
     
     //Create output stream
     CharString attributeDirectory = argv[3];
@@ -707,8 +717,8 @@ int main(int argc, char const ** argv)
         if (hasFlagQCNoPass(record) || hasFlagDuplicate(record))
             continue;
         //Clip away low quality ends and return false if the read becomes too short after this
-        if (!qualityClipBegin(record, windowSize) || !qualityClipEnd(record, windowSize))
-            continue;
+        //if (!qualityClipBegin(record, windowSize) || !qualityClipEnd(record, windowSize))
+        //    continue;
         bamStart = record.beginPos;
         bamEnd = bamStart + length(record.seq);
         mateStart = record.pNext;
