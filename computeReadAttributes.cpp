@@ -373,6 +373,24 @@ Pair<Pair<Pair<CharString>,int>,ReadInfo> computeReadInfo(BamAlignmentRecord& re
         return Pair<Pair<Pair<CharString>,int>,ReadInfo>(mapKey,mapValue);
     }
     double readPurity = getPurity(markerInfo.motif,infix(record.seq, startCoord, oldStartCoord+endCoord+1));
+    if (readPurity <= 0.75*refRepPurity)
+    {
+        //cout << "Start coordinate is larger than end coordinate, can't use this read." << endl;
+        coordinates.i1.i1 = startCoord;
+        coordinates.i1.i2 = endCoord;
+        mapValue.ratioBf = 0;
+        mapValue.ratioAf = 0;
+        mapValue.numOfRepeats = 666;
+        //Debugging code
+        //cout << "Infix command is: infix(" << coordinates.i1.i1 << "," << oldStartCoord+coordinates.i1.i2+1 << ")" << endl; 
+        repeatRegion = "";
+        mapValue.ratioOver20In = 0;
+        mapValue.ratioOver20After = 0;
+        mapValue.purity = 0;
+        mapValue.repSeq = repeatRegion;
+        mapValue.locationShift = 100;
+        return Pair<Pair<Pair<CharString>,int>,ReadInfo>(mapKey,mapValue);
+    }
     //Check if a minimum number of repeats have been found and whether the flanking area is sufficient for both start and end coordinates
     if ((length(source(row(alignBefore,1)))-(startCoord) >=length(markerInfo.motif)*repeatNumbers[length(markerInfo.motif)]) && (startCoord>=minFlank))
         startOk = true;
@@ -392,7 +410,7 @@ Pair<Pair<Pair<CharString>,int>,ReadInfo> computeReadInfo(BamAlignmentRecord& re
         cout << "End ok: " << endOk << endl;
         cout << "Purity ok: " << purityOk << endl;
     }*/
-    if (leftFlank < 4 && flankSum>=2*minFlank && (float)scoreAf/(float)(length(after)-endCoord)>0.7 && readPurity>(0.8*refRepPurity) && (oldStartCoord+endCoord+1)-startCoord >= maxRepeatLength)
+    if ((oldStartCoord+endCoord+1)-startCoord >= maxRepeatLength && leftFlank < 4 && flankSum>=2*minFlank && (float)scoreAf/(float)(length(after)-endCoord)>0.7 && readPurity>(0.8*refRepPurity))
     {
         //cout << "Am making greater than allele on left end." << endl;
         coordinates.i1.i1 = startCoord;
@@ -408,7 +426,7 @@ Pair<Pair<Pair<CharString>,int>,ReadInfo> computeReadInfo(BamAlignmentRecord& re
     }
     else
     {
-        if (rightFlank < 4 && flankSum>=2*minFlank && (float)scoreBf/(float)startCoord>0.7 && readPurity>(0.8*refRepPurity) && (oldStartCoord+endCoord+1)-startCoord >= maxRepeatLength)
+        if ((oldStartCoord+endCoord+1)-startCoord >= maxRepeatLength && rightFlank < 4 && flankSum>=2*minFlank && (float)scoreBf/(float)startCoord>0.7 && readPurity>(0.8*refRepPurity))
         {
             //cout << "Am making greater than allele on right end." << endl;
             coordinates.i1.i1 = startCoord;
@@ -772,8 +790,13 @@ int main(int argc, char const ** argv)
                     }
                     else
                     {
-                        keyValuePair.i2.mateEditDist = myMap[keyValuePair.i1].mateEditDist; 
-                        myMap[keyValuePair.i1] = keyValuePair.i2;
+                        if (keyValuePair.i2.numOfRepeats == 666)
+                            myMap.erase(keyValuePair.i1);
+                        else
+                        {    
+                            keyValuePair.i2.mateEditDist = myMap[keyValuePair.i1].mateEditDist; 
+                            myMap[keyValuePair.i1] = keyValuePair.i2;
+                        }
                     }
                 }   
                 ++currentMarker;
@@ -787,10 +810,18 @@ int main(int argc, char const ** argv)
             if (((mateStart >= markers[currentMarker].STRstart && mateStart <= markers[currentMarker].STRend)||(mateStart < markers[currentMarker].STRstart && mateEnd >= markers[currentMarker].STRstart)) && !hasFlagUnmapped(record))
             {
                 Pair<CharString> readNameAndChrom = Pair<CharString>(record.qName,markers[currentMarker].chrom);
-                Pair<Pair<CharString>,int> mapKey = Pair<Pair<CharString>,int>(readNameAndChrom, markers[currentMarker].STRstart); 
-                if (myMap.count(mapKey) == 0)
-                    myMap[mapKey].numOfRepeats = 666;
-                myMap[mapKey].mateEditDist = getTagValue(record, "NM");
+                Pair<Pair<CharString>,int> mapKey = Pair<Pair<CharString>,int>(readNameAndChrom, markers[currentMarker].STRstart);
+                if (myMap.count(mapKey) != 0)
+                {
+                    if (myMap[mapKey].numOfRepeats == 666)
+                        myMap.erase(mapKey);
+                }
+                else
+                {
+                    if (myMap.count(mapKey) == 0)
+                        myMap[mapKey].numOfRepeats = 666;
+                    myMap[mapKey].mateEditDist = getTagValue(record, "NM");
+                }
                 ++currentMarker;
                 //If I've reached the end of the marker string I break this loop and take the next read
                 if (currentMarker > length(markers)-1)
@@ -806,9 +837,17 @@ int main(int argc, char const ** argv)
                 {
                     Pair<CharString> readNameAndChrom = Pair<CharString>(record.qName,markers[currentMarker].chrom);
                     Pair<Pair<CharString>,int> mapKey = Pair<Pair<CharString>,int>(readNameAndChrom, markers[currentMarker].STRstart);
-                    if (myMap.count(mapKey) == 0)
-                        myMap[mapKey].numOfRepeats = 666; 
-                    myMap[mapKey].mateEditDist = getTagValue(record, "NM");
+                    if (myMap.count(mapKey) != 0)
+                    {
+                        if (myMap[mapKey].numOfRepeats == 666)
+                            myMap.erase(mapKey);
+                    }
+                    else
+                    {
+                        if (myMap.count(mapKey) == 0)
+                            myMap[mapKey].numOfRepeats = 666; 
+                        myMap[mapKey].mateEditDist = getTagValue(record, "NM");
+                    }
                     ++currentMarker;
                     //If I've reached the end of the marker string I break this loop and take the next read
                     if (currentMarker > length(markers)-1)
@@ -834,8 +873,13 @@ int main(int argc, char const ** argv)
                         }
                         else
                         {
-                            keyValuePair.i2.mateEditDist = myMap[keyValuePair.i1].mateEditDist; 
-                            myMap[keyValuePair.i1] = keyValuePair.i2;
+                            if (keyValuePair.i2.numOfRepeats == 666)
+                                myMap.erase(keyValuePair.i1);
+                            else
+                            {
+                                keyValuePair.i2.mateEditDist = myMap[keyValuePair.i1].mateEditDist; 
+                                myMap[keyValuePair.i1] = keyValuePair.i2;
+                            }
                         }
                     }
                     ++currentMarker;
