@@ -11,6 +11,7 @@
 #include <algorithm>
 #include <fstream>
 #include <sys/stat.h>
+#include <ctime>
 
 using namespace std;
 using namespace seqan;
@@ -583,6 +584,7 @@ bool qualityClipEnd(BamAlignmentRecord& record, int windowSize)
 
 int main(int argc, char const ** argv)
 {          
+    time_t begin = time(0);
     //Check arguments.
     if (argc != 8)
     {
@@ -724,6 +726,8 @@ int main(int argc, char const ** argv)
     unsigned markerIndex = 0;
     BamAlignmentRecord record;
     unsigned numToLook;
+    time_t now = time(0);
+    cout << "Starting BAM-file processing: " << now << endl;
     while (!atEnd(inStream))
     {
         if (readRecord(record, context, inStream, Bam()) != 0)
@@ -896,8 +900,14 @@ int main(int argc, char const ** argv)
             numToLook = repeatNumbers[length(markers[currentMarker].motif)];     
         }
     }
+    time_t after = time(0);
+    cout << "Finished BAM-file processing: " << after << endl;
+    cout << "Elapsed time: " << after - now << endl;
+    cout << "Number of reads in myMap: " << myMap.size() << endl;
     map<STRinfoSmall, Pair<Pair<std::set<float>,vector<float> >,String<ReadPairInfo> > > finalMap; //Stores String of ReadPairInfo for each marker
     map<Pair<Pair<CharString>, int>, ReadInfo>::const_iterator ite = myMap.end();
+    now = time(0);
+    cout << "Starting construction of final map: " << now << endl; 
     for(map<Pair<Pair<CharString>, int>, ReadInfo>::const_iterator it = myMap.begin(); it != ite; ++it)
     {
         //If this condition holds then only one member of the read pair has fulfilled the conditions and I can't use the pair.
@@ -929,7 +939,9 @@ int main(int argc, char const ** argv)
         finalMap[currentSTR].i1.i1.insert(currentReadPair.numOfRepeats);
         finalMap[currentSTR].i1.i2.push_back(currentReadPair.numOfRepeats);
     }
-    
+    after = time(0);
+    cout << "Finished construction of final map: " << after << endl;
+    cout << "Elapsed time: " << after - now << endl; 
     //I write PN-id and check whether any reads have been found, if not I exit.
     outputFile << PN_ID << endl;
     if (finalMap.empty())
@@ -937,11 +949,11 @@ int main(int argc, char const ** argv)
         cout << "Finished: " << PN_ID << endl;
         return 0;
     }
-
+    now = time(0);
+    cout << "Starting generation of output: " << now << endl;
     //Set for storing allele-types and vector for storing reported alleles, count occurences in vector for all elements in set to get frequency of each allele
     std::set<float> presentAlleles; 
     vector<float> allAlleles;
-    vector<float> biggerAlleles;
     int winnerFreq, secondFreq, currentFreq;
     float winner, second;
     //Loop over map of markers and look at all reads for each of them
@@ -995,6 +1007,11 @@ int main(int argc, char const ** argv)
             outputFile << setprecision(1) << fixed << printMe.numOfRepeats << flush << "\t" << setprecision(2) << fixed << printMe.ratioBf << "\t" << setprecision(2) << fixed << printMe.ratioAf << "\t" << printMe.locationShift << "\t" << printMe.mateEditDist << "\t" << setprecision(2) << fixed << std::min((float)1.00, printMe.purity) << "\t" << setprecision(2) << fixed << printMe.ratioOver20In << "\t" << setprecision(2) << fixed << printMe.ratioOver20After << "\t" << printMe.sequenceLength << "\t" << printMe.wasUnaligned << "\t" << printMe.repSeq << endl; 
         }        
     }
+    after = time(0);
+    cout << "Finished generation of output: " << after << endl;
+    cout << "Elapsed time: " << after - now << endl;
     cout << "Finished: " << PN_ID << endl;
+    time_t end = time(0);
+    cout << "Total time: " << end - begin << endl;
     return 0;
 }
