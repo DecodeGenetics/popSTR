@@ -18,6 +18,7 @@ nOldMarkers = 0
 nNewMarkers = 0
 nCompMarkers = 0
 nLostAlleles = 0
+nSameAlleles = 0
 
 with open(old_attribute_file, 'r') as old_atts_file:
     pn = old_atts_file.readline()
@@ -28,7 +29,7 @@ with open(old_attribute_file, 'r') as old_atts_file:
             chrom,begin,end,motif,refrep,nreads,refseq = line.split()
             for i in range(0, int(nreads)):
                 l = old_atts_file.readline()
-                posToAlleles[begin].append((l.split()[0],l.split()[6]))                
+                posToAlleles[begin].append(l.split()[0])                
             line = old_atts_file.readline()
         else:
             print 'Something is wrong!'
@@ -45,23 +46,25 @@ with open(new_attribute_file, 'r') as new_atts_file:
             chrom,begin,end,motif,refrep,nreads,refseq,a1,a2 = line.split()
             if begin in posToAlleles: 
                 nCompMarkers += 1
-                oldAlleleSet = set([x[0] for x in posToAlleles[begin]])                  
+                oldAlleleSet = set(posToAlleles[begin])                  
                 for i in range(0, int(nreads)):
                     l = new_atts_file.readline()
-                    if l.split()[0] not in [x[0] for x in posToAlleles[begin]]:
+                    if l.split()[0] not in oldAlleleSet:
                         newAlleles += 1
                     newAlleleSet.add(l.split()[0])                                                
                 if int(nreads) > len(posToAlleles[begin]):
                     nMoreReads += 1
-                    if len(newAlleleSet.difference(oldAlleleSet))>0:
-                        print 'More alleles in new attributes file at: ' + str(begin)
-                        print newAlleleSet.difference(oldAlleleSet)
+                    #if len(newAlleleSet.difference(oldAlleleSet))>0:
+                        #print 'More alleles in new attributes file at: ' + str(begin)
+                        #print newAlleleSet.difference(oldAlleleSet)
                 if int(nreads) < len(posToAlleles[begin]):
                     nLessReads += 1
-                    if len(oldAlleleSet.difference(newAlleleSet))>0:
-                        print 'More alleles in old attributes file at: ' + str(begin)
-                        print oldAlleleSet.difference(newAlleleSet)
-                        nLostAlleles += 1                    
+                    #if len(oldAlleleSet.difference(newAlleleSet))>0:
+                        #print 'More alleles in old attributes file at: ' + str(begin)
+                        #print oldAlleleSet.difference(newAlleleSet)
+                        #nLostAlleles += 1
+                if len(oldAlleleSet.symmetric_difference(newAlleleSet))==0:
+                    nSameAlleles +=1                
                 if newAlleles > 0:
                     nDiffAlleles += 1
                     newAlleles = 0
@@ -80,6 +83,7 @@ print 'Number of markers in new file:' + str(nNewMarkers) + ''
 print 'Total number of compared markers:' + str(nCompMarkers) + ''
 print 'Number of markers with more reads in new file: ' + str(nMoreReads) + ''
 print 'Number of markers with more reads in old file: ' + str(nLessReads) + ''
-print 'Number of markers where I lose alleles in new version: ' + str(nLostAlleles) + ''
-print 'Number of markers with new alleles:' + str(nDiffAlleles) + ''
+#print 'Number of markers where I lose alleles in new version: ' + str(nLostAlleles) + ''
+print 'Number of markers with new alleles: ' + str(nDiffAlleles) + ''
+print 'Number of markers with same alleles in both versions: ' + str(nSameAlleles) + ''
             
