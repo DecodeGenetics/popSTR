@@ -27,7 +27,7 @@ with open(old_attribute_file, 'r') as old_atts_file:
     while line != '':
         if line[0:3] == 'chr':
             nOldMarkers += 1
-            chrom,begin,end,motif,refrep,nreads,refseq = line.split()
+            chrom,begin,end,motif,refrep,nreads,refseq = line.split()[0:7]
             for i in range(0, int(nreads)):
                 l = old_atts_file.readline()
                 posToAlleles[begin].add(l.split()[0])                
@@ -55,7 +55,7 @@ with open(new_attribute_file, 'r') as new_atts_file:
                     if allele not in oldAlleleSet:
                         newAlleles += 1
                     newAlleleSet.add(allele)
-                    if abs(float(allele)*len(motif) - 70) < 0.05:
+                    if len(l.split()[10])>=70:
                         superAllele = True
                 if superAllele:
                     nSuperAlleles +=1                                             
@@ -70,6 +70,8 @@ with open(new_attribute_file, 'r') as new_atts_file:
                         #print 'More alleles in old attributes file at: ' + str(begin)
                         #print oldAlleleSet.difference(newAlleleSet)
                         #nLostAlleles += 1
+                if len(oldAlleleSet.difference(newAlleleSet))>0:
+                    nLostAlleles += 1
                 if len(oldAlleleSet.symmetric_difference(newAlleleSet))==0:
                     nSameAlleles +=1                
                 if newAlleles > 0:
@@ -90,7 +92,7 @@ print 'Number of markers in new file:' + str(nNewMarkers) + ''
 print 'Total number of compared markers:' + str(nCompMarkers) + ''
 print 'Number of markers with more reads in new file: ' + str(nMoreReads) + ''
 print 'Number of markers with more reads in old file: ' + str(nLessReads) + ''
-#print 'Number of markers where I lose alleles in new version: ' + str(nLostAlleles) + ''
+print 'Number of markers where I lose alleles in new version: ' + str(nLostAlleles) + ''
 print 'Number of markers with new alleles: ' + str(nDiffAlleles) + ''
 print 'Number of markers with same alleles in both versions: ' + str(nSameAlleles) + ''
 print 'Fraction of markers with new alleles: ' + str(float(nDiffAlleles)/nCompMarkers)
