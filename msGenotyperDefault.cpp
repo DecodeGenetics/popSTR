@@ -720,8 +720,7 @@ int main(int argc, char const ** argv)
         cout << "Unable to locate pnSlippageFile @ " << argv[2] << endl;
     append(markerSlippageFile, "_");
     append(markerSlippageFile, intervalIndex);
-    ofstream markerSlippageOut(toCString(markerSlippageFile)); 
-    
+    ofstream markerSlippageOut(toCString(markerSlippageFile));
     string PnId, chrom, motif, nextWord, refRepSeq;
     String<string> PnIds;
     std::set<Marker> markers;    
@@ -737,6 +736,22 @@ int main(int argc, char const ** argv)
     map<Marker, std::set<float> > markerToAlleles;
     //Map to store current genotype(and lots of other things) of a person for each marker maps from pnId and Marker-struct to GenotypeInfo struct
     map<Pair<string,Marker>, GenotypeInfo> PnAndMarkerToGenotype;    
+    
+    //Open vcf stream and make header if the estimateMarkerSlippage switch is off
+    VcfStream out;
+    CharString outputDirectory = argv[7];
+    CharString outputFileName = argv[8];
+    append(outputDirectory, "/");
+    append(outputDirectory, outputFileName);
+    append(outputDirectory, "_");
+    append(outputDirectory, intervalIndex);
+    append(outputDirectory, ".vcf");
+    bool outOk = open(out,toCString(outputDirectory), VcfStream::WRITE);
+    if (!outOk)
+    {
+        cerr << "Cannot create vcf file at: " << outputDirectory << endl;
+        return 1;  
+    }
     
     Marker marker;
     string nextLine;
@@ -826,16 +841,7 @@ int main(int argc, char const ** argv)
     chrom = marker.chrom;
     cout << "Reading data from input complete." << endl;    
     
-    //Open vcf stream and make header if the estimateMarkerSlippage switch is off
-    VcfStream out;
-    CharString outputDirectory = argv[7];
-    CharString outputFileName = argv[8];
-    append(outputDirectory, "/");
-    append(outputDirectory, outputFileName);
-    append(outputDirectory, "_");
-    append(outputDirectory, intervalIndex);
-    append(outputDirectory, ".vcf");
-    bool outOk = open(out,toCString(outputDirectory), VcfStream::WRITE);
+    //Make header for vcf file
     makeVcfHeader(out, PnIds, chrom);
     
     //Here I estimate initialization of alpha and beta using linear regression on how slippage changes as a function of allele length.
@@ -1072,7 +1078,7 @@ int main(int argc, char const ** argv)
         //allelesAtMarker.insert(150);
         //genotypesAtThisMarker = makeGenotypes(allelesAtMarker); 
         //First fill marker specific fields of vcfRecord
-        record = fillRecordMarker(thisMarker, markerToAlleles[thisMarker]);       
+        record = fillRecordMarker(thisMarker, markerToAlleles[thisMarker]);  
         //Loop over Pns and fill in PN specific fields of vcfRecord for each PN
         for (unsigned i = 0; i<length(PnIds); ++i)
         {
@@ -1093,7 +1099,7 @@ int main(int argc, char const ** argv)
                 eraseBack(gtInfo);
                 appendValue(record.genotypeInfos, gtInfo);
             }
-        }                
+        }               
         ss << markerToAlleles[thisMarker].size();
         str = ss.str();
         record.filter = str;
