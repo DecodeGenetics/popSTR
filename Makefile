@@ -1,5 +1,5 @@
 # Use version 4.8.2 of g++
-CXX=/opt/rh/devtoolset-2/root/usr/bin/g++
+#CXX=/opt/rh/devtoolset-2/root/usr/bin/g++
 
 # include SeqAn libraries
 #-include ../stat/libraries/Makefile.inc
