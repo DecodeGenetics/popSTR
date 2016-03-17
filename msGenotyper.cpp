@@ -639,9 +639,14 @@ void fillRecordPn(GenotypeInfo genotype, VcfRecord& record, String<Pair<float> >
             else
             {
                 numerator = genotype.pValues[index];
-                denominator = genotype.pValue;
-                pl = round(-10*log10((long double)numerator/(long double)denominator));
-                pl = std::min(255,pl);
+                if (numerator == 0)
+                    pl = 255;
+                else
+                {
+                    denominator = genotype.pValue;
+                    pl = round(-10*log10((long double)numerator/(long double)denominator));
+                    pl = std::min(255,pl);
+                }
                 ss << pl;
                 str = ss.str();
                 append(gtInfo,str);
@@ -1188,7 +1193,7 @@ int main(int argc, char const ** argv)
                         ++updatedPns;
                     relabelReads(currentMarker, i-length(reads), i, changed.i1.genotype, it->first);
                     PnAndMarkerToGenotype[Pair<string,Marker>(PnId,it->first)] = changed.i1; 
-                    if (changed.i2.i2)
+                    if (changed.i2.i2 || !changed.i2.i2)
                     {
                         markerToAlleles[it->first].insert(changed.i1.genotype.i1);
                         markerToAlleles[it->first].insert(changed.i1.genotype.i2);
@@ -1233,7 +1238,7 @@ int main(int argc, char const ** argv)
                 ++updatedPns;
             relabelReads(currentMarker, length(currentMarker)-length(reads), length(currentMarker), changed.i1.genotype, it->first);
             PnAndMarkerToGenotype[Pair<string,Marker>(PnId,it->first)] = changed.i1;
-            if (changed.i2.i2)
+            if (changed.i2.i2 || !changed.i2.i2)
             {
                 markerToAlleles[it->first].insert(changed.i1.genotype.i1);
                 markerToAlleles[it->first].insert(changed.i1.genotype.i2);
