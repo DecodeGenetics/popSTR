@@ -4,6 +4,7 @@
 #include <string>
 #include <ctime>
 #include <math.h> 
+#include <limits.h>
 #include <vector>
 #include <numeric>
 #include <sstream>
@@ -13,6 +14,7 @@
 #include <seqan/basic.h>
 #include <seqan/vcf_io.h>
 #include <seqan/sequence.h>
+#include <seqan/arg_parse.h>
 #include <liblinear-2.01/linear.h>
 #include <liblinear-2.01/linear.cpp>
 #include <liblinear-2.01/tron.h>
@@ -74,6 +76,18 @@ struct GenotypeInfo {
     double pValueSum;
 } ;
 
+//For storing command line arguments 
+struct MsGenotyperOptions
+{
+    CharString attDirChromNum, pnSlippageFile, markerSlippageFile, vcfOutputDirectory, vcfFileName, intervalIndex;    
+    unsigned int startCoordinate;
+    unsigned long int endCoordinate;
+    
+    MsGenotyperOptions() :
+        startCoordinate(0), endCoordinate(ULONG_MAX)
+    {}
+} ;
+
 //So I can map from Markers
 bool operator<(const Marker & left, const Marker & right)
 {
@@ -104,6 +118,54 @@ problem prob;
 problem probBig; //problem structure including reads with label = 2 to use for predict function
 model* model_;
 double bias = -1;
+
+ArgumentParser::ParseResult parseCommandLine(MsGenotyperOptions & options, int argc, char const ** argv)
+{
+    ArgumentParser parser("msGenotyperDefault");
+    setShortDescription(parser, "Microsatellite genotyper");
+    setVersion(parser, "1.3");
+    setDate(parser, "February 2016");
+    addUsageLine(parser, "\\fI-ADCN\\fP attributesDirectory/chromNum/ \\fI-PNS\\fP pnSlippageFile \\fI-MS\\fP markerSlippageFile \\fI-VD\\fP vcfOutputDirectory \\fI-VN\\fP vcfFileName \\fI-R\\fP start end \\fI-I\\fP intervalIndex ");
+    addDescription(parser, "This program performs genptyping on a per chromosome basis for all PNs in the pnSlippageFile given that it can find an attribute file for the PN. The genotypes are written to a file specified by the user.");
+    
+    addOption(parser, ArgParseOption("ADCN", "attributesDirectory/chromNum/", "Path to attributes file for the chromosome being genotyped.", ArgParseArgument::INPUTFILE, "IN-DIR"));
+    setRequired(parser, "attributesDirectory/chromNum/");
+    
+    addOption(parser, ArgParseOption("PNS", "pnSlippageFile", "A file containing slippage rates for the pns to be genotyped.", ArgParseArgument::INPUTFILE, "IN-FILE"));
+    setRequired(parser, "pnSlippageFile");
+    
+    addOption(parser, ArgParseOption("MS", "markerSlippageFile", "A file containing slippage rates for the microsatellites.", ArgParseArgument::OUTPUTFILE, "OUT-FILE"));
+    setRequired(parser, "markerSlippageFile");
+    
+    addOption(parser, ArgParseOption("VD", "vcfOutputDirectory", "A directory to write the vcf file to.", ArgParseArgument::OUTPUTFILE, "OUT-DIR"));
+    setRequired(parser, "vcfOutputDirectory");
+    
+    addOption(parser, ArgParseOption("VN", "vcfFileName", "Name of vcf output file.", ArgParseArgument::OUTPUTFILE, "OUT-FILE"));
+    setRequired(parser, "vcfFileName");
+    
+    addOption(parser, ArgParseOption("R", "range", "The range to genotype.", ArgParseArgument::INTEGER, "BEGIN END", false, 2));
+    setRequired(parser, "range");
+    
+    addOption(parser, ArgParseOption("I", "intervalIndex", "Index of the interval being processed", ArgParseArgument::STRING, "INDEX"));
+    setRequired(parser, "intervalIndex");    
+	setDefaultValue(parser, "intervalIndex", "1");
+	
+	ArgumentParser::ParseResult res = parse(parser, argc, argv);
+	
+	if (res != ArgumentParser::PARSE_OK)
+	    return res;
+	    
+	getOptionValue(options.attDirChromNum, parser, "attributesDirectory/chromNum/");
+	getOptionValue(options.pnSlippageFile, parser, "pnSlippageFile");
+	getOptionValue(options.markerSlippageFile, parser, "markerSlippageFile");
+	getOptionValue(options.vcfOutputDirectory, parser, "vcfOutputDirectory");
+	getOptionValue(options.vcfFileName, parser, "vcfFileName");
+	getOptionValue(options.startCoordinate, parser, "range", 0);
+	getOptionValue(options.endCoordinate, parser, "range", 1);
+	getOptionValue(options.intervalIndex, parser, "intervalIndex");
+	
+	return ArgumentParser::PARSE_OK;
+}
 
 //Fills in the x-part of a problem structure from an AttributeLine structure
 void fillProblemX(int idx, AttributeLine currentLine, problem& myProb)
@@ -573,9 +635,14 @@ void fillRecordPn(GenotypeInfo genotype, VcfRecord& record, String<Pair<float> >
             else
             {
                 numerator = genotype.pValues[index];
-                denominator = genotype.pValue;
-                pl = round(-10*log10((long double)numerator/(long double)denominator));
-                pl = std::min(255,pl);
+                if (numerator == 0)
+                    pl = 255;
+                else
+                {
+                    denominator = genotype.pValue;
+                    pl = round(-10*log10((long double)numerator/(long double)denominator));
+                    pl = std::min(255,pl);
+                }
                 ss << pl;
                 str = ss.str();
                 append(gtInfo,str);
@@ -706,18 +773,17 @@ Pair<double, int> estimateSlippage(String<string> PnIds, map<Pair<string,Marker>
 int main(int argc, char const ** argv)
 {   
     //Check arguments.
-    if (argc != 9)
-    {
-        cerr << "USAGE: " << argv[0] << " attDir/chromNum/ PN-slippageFile startCoordinate endCoordinate intervalNumber markerSlippageFile vcfOutputDirectory/ vcfFileName \n";
-        return 1;
-    }
+    MsGenotyperOptions options;
+    ArgumentParser::ParseResult res = parseCommandLine(options, argc, argv);
+    if (res != seqan::ArgumentParser::PARSE_OK)
+	    return res == seqan::ArgumentParser::PARSE_ERROR;
     
-    //Parse parameters     
-    int startCoord = lexicalCast<int>(argv[3]), endCoord = lexicalCast<int>(argv[4]);
-    CharString attributePath = argv[1], intervalIndex = argv[5], markerSlippageFile = argv[6];
-    ifstream pnSlippageFile(argv[2]);
+    //Assign parameters     
+    int startCoord = options.startCoordinate, endCoord = options.endCoordinate;
+    CharString attributePath = options.attDirChromNum, intervalIndex = options.intervalIndex, markerSlippageFile = options.markerSlippageFile;
+    ifstream pnSlippageFile(toCString(options.pnSlippageFile));
     if(pnSlippageFile.fail())        
-        cout << "Unable to locate pnSlippageFile @ " << argv[2] << endl;
+        cout << "Unable to locate pnSlippageFile @ " << options.pnSlippageFile << endl;
     append(markerSlippageFile, "_");
     append(markerSlippageFile, intervalIndex);
     ofstream markerSlippageOut(toCString(markerSlippageFile));
@@ -739,8 +805,8 @@ int main(int argc, char const ** argv)
     
     //Open vcf stream and make header if the estimateMarkerSlippage switch is off
     VcfStream out;
-    CharString outputDirectory = argv[7];
-    CharString outputFileName = argv[8];
+    CharString outputDirectory = options.vcfOutputDirectory;
+    CharString outputFileName = options.vcfFileName;
     append(outputDirectory, "/");
     append(outputDirectory, outputFileName);
     append(outputDirectory, "_");
@@ -769,7 +835,7 @@ int main(int argc, char const ** argv)
         if (attributeFile.fail())
         {
             cout << "Unable to locate attribute file for " << PnId << " at " << attributePath << endl;
-            attributePath = argv[1];
+            attributePath = options.attDirChromNum;
             continue;
         }
         ++nProcessedPns;
@@ -835,7 +901,7 @@ int main(int argc, char const ** argv)
             if (numberOfWordsAndWords.i1 != 1 && numberOfWordsAndWords.i1 != 9 && numberOfWordsAndWords.i1 != 11) 
                 cerr << "Format error in attribute file!" << endl;
         }            
-        attributePath = argv[1];
+        attributePath = options.attDirChromNum;
         attributeFile.close();
     }
     chrom = marker.chrom;
@@ -1006,7 +1072,7 @@ int main(int argc, char const ** argv)
                         ++updatedPns;
                     relabelReads(currentMarker, i-length(reads), i, changed.i1.genotype, it->first);
                     PnAndMarkerToGenotype[Pair<string,Marker>(PnId,it->first)] = changed.i1; 
-                    if (changed.i2.i2)
+                    if (changed.i2.i2 || !changed.i2.i2)
                     {
                         markerToAlleles[it->first].insert(changed.i1.genotype.i1);
                         markerToAlleles[it->first].insert(changed.i1.genotype.i2);
@@ -1048,7 +1114,7 @@ int main(int argc, char const ** argv)
                 ++updatedPns;
             relabelReads(currentMarker, length(currentMarker)-length(reads), length(currentMarker), changed.i1.genotype, it->first);
             PnAndMarkerToGenotype[Pair<string,Marker>(PnId,it->first)] = changed.i1;
-            if (changed.i2.i2)
+            if (changed.i2.i2 || !changed.i2.i2)
             {
                 markerToAlleles[it->first].insert(changed.i1.genotype.i1);
                 markerToAlleles[it->first].insert(changed.i1.genotype.i2);
