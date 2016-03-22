@@ -44,8 +44,9 @@ online.}
 \label{s:intro}
 Microsatellites have a mutation rate that is much higher than for other variations and its value has been estimated between $1 \cdot 10^{-4}$ and $1 \cdot 10^{-3}$ mutations per locus per generation \cite{sun2012direct}.
 This high mutation rate is due to the repetitive structure of microsatellites which causes a secondary DNA conformation that makes replication slippage events more likely than in other locations of the genome \cite{Mirkin2007}. Replication slippage is an error which occurs when DNA molecules are copied. The error results in either an increase or decrease in the number of motif repeats. During replication the copy strand being created and the original template strand get shifted in their relative positions which causes a part of the template to either be copied twice or not copied at all, see Figure ~\ref{fig:RepSlipp}. As a result of this error the newly replicated polynucleotide has either an extra repeat unit or is missing a repeat unit \cite{Brown2002}.
-The high mutation rate causes the alleles of a microsatellite to vary greatly between individuals \cite{sun2012direct} and no pair of individuals alive today have the same combination of alleles for all microsatellites \cite{Highnam2013}.
-This makes it possible to create a unique genetic profile for every individual if enough microsatellites are profiled, with the exception of identical twins who share 100\% of their DNA \cite{NHGRI1999}.
+The effect of replication slippage is different depending on the cell it happens in and when it happens. If a slippage event occurs during replication of a sex cell it results in a germline mutation. If the mutated sex cell takes part in fertilization then the mutation is passed on to the individual's offspring. Slippage events can also occur during the development of somatic tissue and this is a somatic mutation. The mutated cell can divide and create more cells carrying the same mutation but the mutation will never be passed on to an offspring \cite{somatic}. During some sequencing processes the DNA molecules in the sample are replicated by PCR amplification as a part of the sample preparation. If a slippage event occurs during this process it generates stutter noise in the sample which results in wrong sequencing results from the molecules containing the mutation. This makes the analysis of the sequencing results harder and may result in genotyping errors. 
+Because of their high mutation rate, the alleles of a microsatellite to vary greatly between individuals \cite{sun2012direct} and no pair of individuals alive today have the same combination of alleles for all microsatellites \cite{Highnam2013}.
+It is thererfore possible to create a unique genetic profile for every individual if enough microsatellites are profiled, with the exception of identical twins who share 100\% of their DNA \cite{NHGRI1999}.
 There are a number of attributes which make the analysis of microsatellites using high throughput sequencing analysis pipelines hard. For a read to be useful for genotyping it must completely encompass the microsatellite. If a read only contains a portion of the microsatellite it can only give a lower bound on the number of repeats and thus only reads containing all of the microsatellite can be used for determining the number of repeats \cite{Gymrek2012}. Another challenge is how most popular read-to-reference aligners trade-off between the tolerance of insertions/deletions and running time.
 Aligning a read to a reference genome becomes very hard if it contains a microsatellite, even if the microsatellite only has small number of added/deleted repeat motifs compared to the genome used as reference. This is due to the gaps that the extra/missing base pairs create in the alignment \cite{Li2010}. PCR amplification, a routine step in sample preparation for certain methods for whole genome sequencing, can create stutter noise. When this happens the DNA amplicons contain a false repeat length caused by successive slippage events during amplification. It results in reads declaring a false allele which damages the results of genotyping \cite{Ellegren2004}. The conclusion to be drawn from this is that despite its desirability, the analysis of microsatellites is challenging using the sequencing and analysis techniques available today.
 \begin{figure}[ht]
@@ -62,10 +63,59 @@ Aligning a read to a reference genome becomes very hard if it contains a microsa
 
 \begin{methods}
 \section{Methods}
-
-The popSTR process has 3 steps. During the first step we identify the reads useful for genotyping, compute their attributes and initialize genotypes. In the second step we compute an individual-specific slippage rate, quantifying the probability of a replication slippage event in this individual. In the third and last step we compute a marker specific slippage rate to quantify the probability of a replication slippage event at this marker, we train a logistic regression classifier for each marker and we perform genotyping.
+popSTR runs on whole genome sequencing data, already mapped to a reference sequence, sorted by genomic location and stored in BAM-files.
+The popSTR process has 3 steps. During the first step we identify the reads useful for genotyping, compute their attributes and initialize genotypes. In the second step we compute an individual-specific slippage rate, quantifying the probability of stutter noise reads in this individual. In the third and last step we compute a marker specific slippage rate to quantify the probability of stutter noise at this marker, we train a logistic regression classifier for each marker and we perform genotyping.
 \enlargethispage{6pt}
 \subsection{Mathematical models}
+Several error sources need to be accounted for in our modelling. We need to assume a specific rate of slippage which depends both on the microsatellite and the individual being genotyped. The slippage has a Poisson and a geometric distribution component depending on whether the added/removed bases contain a full or partial motif. Sequencing and mapping errors are accounted for by training logistic regression classifiers for all microsatellites. Each classifier then assigns a probability of reporting a true allele to all reads aligned to the microsatellite the classifier represents. 
+\subsubsection{Slippage distribution and genotyping}
+\label{subsubsec:modelSlipp}
+To determine a genotype for individual $j$ at microsatellite $i$ we start by looking at all reads for the given individual aligned to the given microsatellite and determine the possible genotypes they offer. We then compute the likelihood of the reads given each genotype and pick the genotype that maximizes this likelihood. The expression used to compute this likelihood for a set of reads $R = \{r_1,\dots,r_n\}$ and a genotype $gt$ is 
+\begin{equation}
+P(\text{R|gt}) = \prod_s p(r_s|gt)
+\end{equation}
+The expression used to compute $p(r_s|gt)$ was updated several times. Our first version assumes a Poisson distribution of the stutter noise error events with $\lambda = S_{ij}$ and includes the probability of reporting a true allele given to every read by the logistic regression classifier of the microsatellite it is aligned to. We let $p(r^t_s)$ denote the probability that read $s$ reports a true allele and $x$ stand for number of slippage events. The number of slippage events is defined as the difference between the number of repeats reported by the read and the number of repeats in the genotype. This gives the following expression for a homozygous genotype $A$.
+\begin{equation}
+p(r_s|A) = p(r^t_s) \cdot pois(x;S_{ij})
+\label{eq:likelihood}
+\end{equation}
+and for a heterozygous genotype $(A,B)$ we compute the number of slippage events relative to both alleles in the genotype.
+\begin{multline}
+p(r_s|A,B) = \\
+p(r^t_s) \cdot 
+(\frac{1}{2} \cdot pois(x(A);S_{ij})+ \frac{1}{2} \cdot pois(x(B);S_{ij}))
+\end{multline}
+The problem with this expression is that it becomes very small for non-slippage error reads. For these reads our model assumes that each of the other reported alleles is equally likely, so we set $n^i_{alleles}$ as the number of alleles present in the population for microsatellite $i$ and update the expression for $p(r_s|gt)$ in the following way
+\begin{equation}
+p(r_s|A) = p(r^t_s) \cdot pois(x;S_{ij}) + \frac{1-p(r^t_s)}{n^i_{alleles}}
+\label{eq:likelihood2}
+\end{equation}
+and in the same way for a heterozygote genotype 
+\begin{multline}
+p(r_s|A,B) = p(r^t_s) \cdot (\frac{1}{2} \cdot pois(x(A);S_{ij})+ \\
+\frac{1}{2} \cdot pois(x(B);S_{ij})) + \frac{1-p(r^t_s)}{n^i_{alleles}}
+\end{multline}
+Using this expression to determine the probability of a read given a genotype we assume that stutter noise is equally likely to result in reads with fewer repeat units and reads with extra repeat units. This is however not the case as stutter noise is more likely to delete repeat units and to account for this we add a parameter, $a$. The probability of deleting a repeat unit is set as $p_d$ and of adding a repeat unit as $p_a$ which means we set $a$ as $p_d$ if allele$_i < A$ and $p_a$ if allele$_i > A$ The expression derived from this thus becomes 
+\begin{equation}
+p(r_s|A) = p(r^t_s) \cdot pois(x;S_{ij}) \cdot a + \frac{1-p(r^t_s)}{n^i_{alleles}}
+\label{eq:likelihood3}
+\end{equation}
+and in the same way for a heterozygote genotype but there we need $a_1$ and $a_2$ to compare allele$_i$ with both alleles of the genotype, $A$ and $B$
+\begin{multline}
+p(r_s|A,B) = p(r^t_s) \cdot \\
+(\frac{1}{2} \cdot pois(x(A);S_{ij}) \cdot a_1+ \frac{1}{2} \cdot pois(x(B);S_{ij})\cdot a_2)\\
++ \frac{1-p(r^t_s)}{n^i_{alleles}}
+\label{eq:likelihood3.5}
+\end{multline}
+Slippage events resulting in a non-unit addition or removal of the motif however should not be modelled in the same way as slippage events adding or removing a full copy of the motif. Because of this we model non-unit slippage events as following a geometrical distribution where $p = \frac{1}{\bar{x}+1}$ and $\bar{x}$ is the average step size modulo the length of the repeat motif \cite{Gymrek2012}.
+To reflect this we update our heterozygous genotyping expression in the following way:
+\begin{multline}
+    p(r_s|A,B) = p(r^t_s) \cdot \\
+    \biggl(\frac{1}{2} \cdot pois(floor(x_A);S_{ij}) \cdot geom(x_A-floor(x_A);p) \cdot a_1 \\ + \frac{1}{2} \cdot pois(floor(x_B);S_{ij})\cdot geom(x_A-floor(x_A);p) \cdot a_2 \biggr) \\
+    + \frac{1-p(r^t_s)}{n^i_{alleles}}
+    \label{eq:likelihood4}
+\end{multline}
+This final expression combines the power obtained through the logistic regression classifier, the estimation of slippage rates at microsatellites and individuals and includes both the Poisson component and th geometric distribution component of the slippage. By adding the probability that a read is an error to the number it contributes to the likelihood we raise the tolerance for error reads. This makes it possible to call a homozygous genotype despite having perhaps a number of reads supporting another allele if these other reads get poor results from the logistic regression classifier.
 \subsubsection{Slippage rate estimation}
 The frequency of slippage errors that cause stutter noise varies between microsatellites. To account for this we estimate a specific slippage rate for each location. This gives an accurate estimation since it includes the characteristics of each microsatellite instead of using the same expression for all of them. We estimate the slippage rate at microsatellite $i$ by dividing the number reads at the microsatellite marked as error reads by the total number of reads aligned to the microsatellite.
 The following expression is used to estimate $S^M_i$, the slippage rate at microsatellite $i$
@@ -86,7 +136,7 @@ S^{M}_i = \frac{\sum p^e_i}{\sum p_i} -
 \sum_j S^{P}_j \cdot \frac{\sum p_{ij}}{\sum p_i}
 \label{eq:sMjEq}
 \end{equation}
-In the expression used for estimating the slippage of individual $j$ we let $p^e_j$ denote the probability that an error read from individual $j$ reports a true allele and $p_j$ denote the probability that a read from individual $j$ reports a true allele, regardless of how it is marked. So the expression becomes 
+In the expression used for estimating the slippage of individual $j$ we let $p^e_j$ denote the probability that an error read from individual $j$ reports a true allele and $p_j$ denote the probability that a read from individual $j$ reports a true allele, regardless of how it is marked. So the expression becomes
 \begin{equation}
 S^{P}_j = \frac{\sum p^e_j}{\sum p_j} - 
 \sum_i S^{M}_i \cdot \frac{\sum p_{ij}}{p_j}
@@ -114,90 +164,10 @@ S^{P}_j = \frac{\sum p^e_j}{\sum p_j} -
 \label{eq:sPjEq2}
 \end{equation}
 Using these estimates we include the overall slippage rate of the individual or microsatellite being considered along with the contribution of each microsatellite to the individual and the contribution of each individual to the microsatellite. These contributions are however weighed with the inverse of their variance so noisy individuals or microsatellites will not skew the estimates.
-
-\subsubsection{Modelling slippage and genotyping}
-\label{subsubsec:modelSlipp}
-To determine a genotype for individual $j$ at microsatellite $i$ we start by looking at all reads for the given individual aligned to the given microsatellite and determine the possible genotypes they offer. We then compute the likelihood of the reads given each genotype and pick the genotype that maximizes this likelihood. The expression used to compute this likelihood for a set of reads $R = \{r_1,\dots,r_n\}$ and a genotype $gt$ is 
-\begin{equation}
-P(\text{R|gt}) = \prod_s p(r_s|gt)
-\end{equation}
-Like the slippage rate estimates, the expression used to compute $p(r_s|gt)$ was updated several times. Our first version assumes a Poisson distribution of the stutter noise error events with $\lambda = S_{ij}$ and includes the probability of reporting a true allele given to every read by the logistic regression classifier of the microsatellite it is aligned to. We let $p(r^t_s)$ denote the probability that read $s$ reports a true allele and $x$ stand for number of slippage events. The number of slippage events is defined as the difference between the number of repeats reported by the read and the number of repeats in the genotype. This gives the following expression for a homozygous genotype $A$.
-\begin{equation}
-p(r_s|A) = p(r^t_s) \cdot pois(x;S_{ij})
-\label{eq:likelihood}
-\end{equation}
-and for a heterozygous genotype $(A,B)$ we compute the number of slippage events relative to both alleles in the genotype.
-\begin{multline}
-p(r_s|A,B) = \\
-p(r^t_s) \cdot 
-(\frac{1}{2} \cdot pois(x(A);S_{ij})+ \frac{1}{2} \cdot pois(x(B);S_{ij}))
-\end{multline}
-
-The problem with this expression is that it becomes very small for non-slippage error reads. For these reads our model assumes that each of the other reported alleles is equally likely, so we set $n^i_{alleles}$ as the number of alleles present in the population for microsatellite $i$ and update the expression for $p(r_s|gt)$ in the following way
-
-\begin{equation}
-p(r_s|A) = p(r^t_s) \cdot pois(x;S_{ij}) + \frac{1-p(r^t_s)}{n^i_{alleles}}
-\label{eq:likelihood2}
-\end{equation}
-and in the same way for a heterozygote genotype 
-\begin{multline}
-p(r_s|A,B) = p(r^t_s) \cdot (\frac{1}{2} \cdot pois(x(A);S_{ij})+ \\
-\frac{1}{2} \cdot pois(x(B);S_{ij})) + \frac{1-p(r^t_s)}{n^i_{alleles}}
-\end{multline}
-Using this expression to determine the probability of a read given a genotype we assume that stutter noise is equally likely to result in reads with fewer repeat units and reads with extra repeat units. This is however not the case as stutter noise is more likely to delete repeat units and to account for this we add a parameter, $a$. The probability of deleting a repeat unit is set as $p_d$ and of adding a repeat unit as $p_a$ which means we set $a$ as $p_d$ if allele$_i < A$ and $p_a$ if allele$_i > A$ The expression derived from this thus becomes 
-\begin{equation}
-p(r_s|A) = p(r^t_s) \cdot pois(x;S_{ij}) \cdot a + \frac{1-p(r^t_s)}{n^i_{alleles}}
-\label{eq:likelihood3}
-\end{equation}
-and in the same way for a heterozygote genotype but there we need $a_1$ and $a_2$ to compare allele$_i$ with both alleles of the genotype, $A$ and $B$
-\begin{multline}
-p(r_s|A,B) = p(r^t_s) \cdot \\
-(\frac{1}{2} \cdot pois(x(A);S_{ij}) \cdot a_1+ \frac{1}{2} \cdot pois(x(B);S_{ij})\cdot a_2)\\
-+ \frac{1-p(r^t_s)}{n^i_{alleles}}
-\label{eq:likelihood3.5}
-\end{multline}
-
-Slippage events resulting in a non-unit addition or removal of the motif however should not be modelled in the same way as slippage events adding or removing a full copy of the motif. Because of this we model non-unit slippage events as following a geometrical distribution where $p = \frac{1}{\bar{x}+1}$ and $\bar{x}$ is the average step size modulo the length of the repeat motif \cite{Gymrek2012}.
-To reflect this we update our heterozygous genotyping expression in the following way:
-\begin{multline}
-    p(r_s|A,B) = p(r^t_s) \cdot \\
-    \biggl(\frac{1}{2} \cdot pois(floor(x_A);S_{ij}) \cdot geom(x_A-floor(x_A);p) \cdot a_1 \\ + \frac{1}{2} \cdot pois(floor(x_B);S_{ij})\cdot geom(x_A-floor(x_A);p) \cdot a_2 \biggr) \\
-    + \frac{1-p(r^t_s)}{n^i_{alleles}}
-    \label{eq:likelihood4}
-\end{multline}
-This final expression combines the power obtained both through the logistic regression classifier and the estimation of slippage rates at microsatellites and individuals. By adding the probability that a read is an error to the number it contributes to the likelihood we raise the tolerance for error reads. This makes it possible to call a homozygous genotype despite having perhaps a number of reads supporting another allele if these other reads get poor results from the logistic regression classifier.
 \end{methods}
 \section{Algorithm}
 \subsection{Read selection}
     The read selection simultaneously scans through the sequencing data and the microsatellite location file and compares all reads to the current microsatellite coordinates. If a read intersecting a microsatellite is found it is stored along with its mate. When we reach reads with an alignment location greater than the current microsatellite coordinates we move on to the next microsatellite.
-    \paragraph{\textbf{Pseudocode}} 
-    We let $r_i^s$ and $r_i^e$ denote the start and end positions of the alignment for read number $i$, respectively. We set $m_j^s$ and $m_j^e$ as the start and end positions of microsatellite number $j$, respectively. For properties regarding the read we let $r_i^u$ be a logical value which is true if read $i$ is unaligned, $r_i^q$ be set to true if the read passes quality checks and $r_i^d$ be set to true if the read is an optical duplicate. Both the reads and microsatellites must then be sorted in the same way such that $\forall i,k$ if $i<k$ then $r_i$ comes before $r_k$ and $\forall j,l$ if $j<l$ then $m_j$ comes before $m_l$ in the sorting.
-    Given sequencing data containing reads $r_1 \dots r_n$ and a microsatellite location file containing the genomic coordinates of microsatellites $m_1 \dots m_b$ we will start with $j=1$, consider each read from $1$ to $n$ separately and check for the following conditions
-    \begin{enumerate}
-        \item Is $r_i^q$ = FALSE? If yes, discard it and set $i = i+1$.
-        \item Is $r_i^d$ = TRUE? If yes, discard it and set $i = i+1$.
-        \item Is $r_i^u$ = TRUE? If yes, check the location of its mate and store both if the mate satisfies any of conditions 6-9, set $i = i+1$.
-        \item Is $r_i^e$ \textless $m_j^s$? If yes, discard it and set $i = i+1$.
-        \item Is $r_i^s$ \textgreater $m_j^e$? If yes, set $j=j+1$ and start from 4. again.
-        \item Is $r_i^e \geq m_j^s$ and $r_i^e \leq m_j^e$? If yes, store $r_i$ and its mate and set $i = i+1$.
-        \item Is $r_i^s \geq m_j^s$ and $r_i^s \leq m_j^e$? If yes, store $r_i$ and its mate and set $i = i+1$.
-        \item Is $r_i^s \geq m_j^s$ and $r_i^e \leq m_j^e$? If yes, store $r_i$ and its mate and set $i = i+1$.
-        \item Is $r_i^s \leq m_j^s$ and $r_i^e \geq m_j^e$? If yes, store $r_i$ and its mate and set $i = i+1$.
-    \end{enumerate}
-    
-    \begin{figure}[H]
-        \centering
-        \begin{tikzpicture}
-            \draw [|-|, black, very thick] (1.5,2) -- (5,2);
-            \draw [|-|, blue, very thick] (0,1.5) -- (1,1.5);
-            \draw [|-|, red, very thick] (6,1.5) -- (7,1.5);
-            \draw [|-|, green, very thick] (0.5,1) -- (3,1);
-            \draw [|-|, orange, very thick] (4,1) -- (6.5,1);
-            \draw [|-|, violet, very thick] (2.5,0.5) -- (4.5,0.5);
-            \draw [|-|, magenta, very thick] (1,0) -- (6,0);
-        \end{tikzpicture}
-        \caption[Method for selecting reads]{The black line at the top shows the microsatellite region. Condition 4 deals with the blue read, condition 5 with the red one, condition 6 with the green one, condition 7 with the orange one, condition 8 with the purple one and condition 9 with the pink one.}
-    \end{figure}
     
     \noindent When a possibly useful read has been identified we check whether it contains the microsatellite it was aligned to. If it does, we align the flanking sequences of the repeat to the flanking sequences of the microsatellite, which we get from the reference genome and compute various attributes.
     After scanning through all reads we initialize genotypes based on frequencies.
@@ -239,7 +209,7 @@ PopSTR was written in C++ using the sequence analysis library SeqAn which allows
     
     We throw away low quality reads, i.e. the ones that fail platform or vendor quality checks and reads that are PCR or optical duplicates. This should increase the result quality since the reads being removed could possibly decrease the genotyping accuracy.
     When we have scanned all of the sequencing data and computed attributes for all useful reads at every microsatellite, we initialize genotypes based on frequencies and write both the attributes and the genotype initialization to an output file.
-\subsection{Slippage computation - PN and marker specific}
+\subsection{Slippage computation - Individual and marker specific}
     The slippage for individual $j$ is initialized by dividing the number of reads reporting an allele not in the initialized genotype by the total number of reads.
     \begin{equation}
             S^{P}_j = \frac{\sum n^e_j}{\sum n_j}
@@ -296,7 +266,7 @@ During the training 5 iterations were performed until convergence was reached. F
 
 \subsection{Running popSTR on 15.220 individuals}
 A total of 380.261 microsatellites were imputed into the Icelandic population.
-First, we performed step I and identified useful reads and computed their attributes for all PNs at all markers. Next, we directly estimated individual slippage rates using only reads aligned to the 8303 microsatellites from the training set. We used the logistic regression classifiers from the training to assign probabilities to the reads and plugged the probabilities into equation ~\ref{eq:sPjEq2} along with the marker slippage rates from training. 
+First, we performed step I and identified useful reads and computed their attributes for all individuals at all markers. Next, we directly estimated individual slippage rates using only reads aligned to the 8303 microsatellites from the training set. We used the logistic regression classifiers from the training to assign probabilities to the reads and plugged the probabilities into equation ~\ref{eq:sPjEq2} along with the marker slippage rates from training. 
 As a sanity check of the individual slippage rates we checked if they correlate significantly with age. The slippage rate was expected to increase with age due to somatic mutations that accumulate throughout a persons life. Due to a sequencing method batch effect observed in the data we considered only individuals sequenced using HiSeqX machines. Despite this we observed a batch effect as a result of moving from methods using PCR amplification to PCR-free methods. We therefore included a boolean for this property in the age correlation test. The results from that were very clear that slippage rate increases with age (p-value=8.21e-13)
 Last we genotyped all individuals using Equation ~\ref{eq:likelihood4}.
 
