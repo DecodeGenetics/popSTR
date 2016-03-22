@@ -14,8 +14,8 @@
 
 \subtitle{Genome analysis}
 
-\title[popSTR]{popSTR: a population based microsatellite genotyper}
-\author[Sample \textit{et~al}.]{Sn\ae d\'{i}s Kristmundsd\'{o}ttir\,$^{\text{\sfb 1,}*}$, Bjarni V. Halld\'{o}rsson\,$^{\text{\sfb 1,2}}$ and Birte Kehr\,$^{\text{\sfb 1}}$}
+\title[popSTR]{popSTR: population-scale detection of STR variants}
+\author[Sample \textit{et~al}.]{Sn\ae d\'{i}s Kristmundsd\'{o}ttir\,$^{\text{\sfb 1,}*}$, Brynja D. Sigurp\'{a}lsd\'{o}ttir\,$^{\text{\sfb 1,2}}$ Birte Kehr\,$^{\text{\sfb 1}}$} and Bjarni V. Halld\'{o}rsson\,$^{\text{\sfb 1,2}}$ 
 \address{$^{\text{\sf 1}}$deCODE genetics/Amgen, Reykjav\'{i}k, 101, Iceland and \\
 $^{\text{\sf 2}}$Institute of Biomedical and Neural Engineering, Reykjav\'{i}k University, Reykjav\'{i}k, 101,
 Icleand.}
@@ -42,13 +42,25 @@ online.}
 
 \section{Introduction}
 \label{s:intro}
-Microsatellites have a mutation rate that is much higher than for other variations and its value has been estimated between $1 \cdot 10^{-4}$ and $1 \cdot 10^{-3}$ mutations per locus per generation \cite{sun2012direct}.
-This high mutation rate is due to the repetitive structure of microsatellites which causes a secondary DNA conformation that makes replication slippage events more likely than in other locations of the genome \cite{Mirkin2007}. Replication slippage is an error which occurs when DNA molecules are copied. The error results in either an increase or decrease in the number of motif repeats. During replication the copy strand being created and the original template strand get shifted in their relative positions which causes a part of the template to either be copied twice or not copied at all, see Figure ~\ref{fig:RepSlipp}. As a result of this error the newly replicated polynucleotide has either an extra repeat unit or is missing a repeat unit \cite{Brown2002}.
-The effect of replication slippage is different depending on the cell it happens in and when it happens. If a slippage event occurs during replication of a sex cell it results in a germline mutation. If the mutated sex cell takes part in fertilization then the mutation is passed on to the individual's offspring. Slippage events can also occur during the development of somatic tissue and this is a somatic mutation. The mutated cell can divide and create more cells carrying the same mutation but the mutation will never be passed on to an offspring \cite{somatic}. During some sequencing processes the DNA molecules in the sample are replicated by PCR amplification as a part of the sample preparation. If a slippage event occurs during this process it generates stutter noise in the sample which results in wrong sequencing results from the molecules containing the mutation. This makes the analysis of the sequencing results harder and may result in genotyping errors. 
-Because of their high mutation rate, the alleles of a microsatellite to vary greatly between individuals \cite{sun2012direct} and no pair of individuals alive today have the same combination of alleles for all microsatellites \cite{Highnam2013}.
-It is thererfore possible to create a unique genetic profile for every individual if enough microsatellites are profiled, with the exception of identical twins who share 100\% of their DNA \cite{NHGRI1999}.
-There are a number of attributes which make the analysis of microsatellites using high throughput sequencing analysis pipelines hard. For a read to be useful for genotyping it must completely encompass the microsatellite. If a read only contains a portion of the microsatellite it can only give a lower bound on the number of repeats and thus only reads containing all of the microsatellite can be used for determining the number of repeats \cite{Gymrek2012}. Another challenge is how most popular read-to-reference aligners trade-off between the tolerance of insertions/deletions and running time.
-Aligning a read to a reference genome becomes very hard if it contains a microsatellite, even if the microsatellite only has small number of added/deleted repeat motifs compared to the genome used as reference. This is due to the gaps that the extra/missing base pairs create in the alignment \cite{Li2010}. PCR amplification, a routine step in sample preparation for certain methods for whole genome sequencing, can create stutter noise. When this happens the DNA amplicons contain a false repeat length caused by successive slippage events during amplification. It results in reads declaring a false allele which damages the results of genotyping \cite{Ellegren2004}. The conclusion to be drawn from this is that despite its desirability, the analysis of microsatellites is challenging using the sequencing and analysis techniques available today.
+Microsatellites (a.k.a. short tandem repeats, STRs) are short DNA sequences containing a repeated motif of length 2-6 base pairs.
+Microsatellites are one of the most abundant type of variation in the human genome, after Single Nucleotide Polymorphisms (SNPs) and Indels.  
+Microsatellites have a mutation rate estimated between
+$1 \cdot 10^{-4}$ and $1 \cdot 10^{-3}$ mutations per locus per generation \cite{sun2012direct}, much higher than the mutation rate 
+estimated for SNPs~\cite{KongSNPrate} of $1.2 \cdot 10^{-8}$.  Their high mutation rate made microsatellites particularly alluring 
+for genotyping during the linkage era~\cite{LinkagePaper}.
+Due to their high mutation rate, the alleles of a microsatellite to vary greatly between individuals~\cite{sun2012direct} and,  
+appart from identical twins, no pair of individuals alive today have the same combination of alleles for all microsatellites \cite{Highnam2013}.
+Using relatively few microsatellites, it is possible to create a unique genetic profile for every individual~\cite{NHGRI1999},
+making microsatellites appealing for applications such as forensic analysis~\cite{forensicsMsat}.
+Despite their abundance and the increasing availability of whole genome sequencing data, microsatellites are however often neglected 
+in GWAS studies~\cite{Gudbjartsson2015}.
+
+The high mutation rate can be attributed to the repetitive structure of microsatellites, which causes a secondary DNA conformation that 
+makes replication slippage events more likely than in other locations of the genome~\cite{Mirkin2007}. 
+Replication slippage occurs during replication when the copy strand being created and the original template strand get shifted in their relative 
+positions, causing a part of the template to either be copied twice or not copied at all (cf. Figure ~\ref{fig:RepSlipp}) and resulting 
+in either an increase or decrease in the number of motif repeats~\cite{Brown2002}.
+
 \begin{figure}[ht]
 \centering
  \includegraphics[width=0.5\linewidth]{figures/replicationSlippage.eps}
@@ -56,6 +68,26 @@ Aligning a read to a reference genome becomes very hard if it contains a microsa
  \label{fig:RepSlipp}
 \end{figure}
 
+Replication slippage can occur within individual cells, as well as when the sample is being analyzed.
+A slippage event that occurs during replication of a sex cell results in a germline mutation and may be passed on to an offspring, while slippage events 
+within other cells of the body lead to somatic mutations.  Slippage events also frequently occur in PCR amplification, a preprocessing step often performed
+prior to sequencing or during sequencing itself.  As a result, the sequence reads of an individul contain both reads from its germline variants and 
+reads resulting from slippage events, complicating the genotyping of microsatellites.
+
+The genotyping of microsatellites is further complicated by the fact that their high mutation rate can make it difficult to align microsatellite reads to the correct
+location on the genome; most popular read-to-reference aligners trade-off between the tolerance of insertions/deletions and running time.
+Yet another complication is the length of the microsatellite, as aligners generally require a unique match to the genome to seed their alignment, reads that are fully 
+contained within a microsatellite can often not be placed within the genome.  Further, reads that do not fully encompass the microsatellite and only contain a portion 
+of the microsatellite can only give a lower bound on the number of repeats~\cite{Gymrek2012}. 
+
+A number of methods have been developed to genotype microsatellites~\cite{VNTRseek,RepeatSeq,lobSTR}.   We present {\em popSTR}, a method capable of studying 
+microsatellite ({\em STR}) variation within all individuals of a {\em pop}ulation simultaneously.  
+Our primary emphasis is on determining genotype likelihoods; the likelihood of a genotype given the sequencing reads at the given location.  
+Microsatellite mutation rates have been shown to vary greatly between microsatellites as well as between individuals~\cite{sun2012direct}. Consequently, our model allows 
+for an error model specific to each microsatellite and individual being studied.
+
+Our results indicate that our method is both faster and more accurate than previously described methods.
+%Need to expand on above, once we have results
 
 %\enlargethispage{12pt}
 
