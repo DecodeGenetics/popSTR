@@ -37,6 +37,7 @@ struct Marker {
     string chrom;
     int start;
     int end;
+    string motif;
 } ;
 
 struct AttributeLine {
@@ -50,8 +51,19 @@ struct AttributeLine {
     float ratioOver20After;
     unsigned sequenceLength;
     bool wasUnaligned;
+    int label;
     double pValue;
 } ; 
+
+struct GenotypeInfo {
+    String<Pair<float> > genotypes;
+    String<long double> pValues;
+    Pair<float> genotype;
+    double pValue;
+    int numOfReads;
+    map<float, int> alleleToFreq; //This maps from reported alleles to their frequencies
+    double pValueSum;
+} ;
 
 //So I can map from Markers
 bool operator<(const Marker & left, const Marker & right)
@@ -60,10 +72,19 @@ bool operator<(const Marker & left, const Marker & right)
 }
 
 //Sums the pValues of reads at every marker, also stores the current slippage rate value for each marker
-map<Marker, Pair<double> > markerToPSumSlipp;
+map<Marker, Pair<int, String<double> > > markerToNallelesPSumSlippAndStutt;
 
 //Stores the logistic regression model definition for each marker, is cleared for each chromosome
 map<Marker, model*> markerToModel;
+
+//Stores number of pns used in estimating marker slippage for each marker
+map<Marker, int> markerToNpns;
+
+//Store AttributeLine for all reads 
+map<Marker, String<AttributeLine> > markerToReads;
+
+//Store alleles at each marker
+map<Marker, Pair<std::set<float>, String<Pair<float> >> > markerToAllelesAndGenotypes;
 
 //Fills in the x-part of a problem structure from an AttributeLine structure
 void fillProblemX(int idx, AttributeLine currentLine, problem& myProb)
@@ -91,7 +112,7 @@ void fillProblemX(int idx, AttributeLine currentLine, problem& myProb)
 }
 
 void readMarkerSlippage(ifstream& markerSlippageFile)
-{   
+{
     Marker currMarker;
     string tempVal;        
     while (!markerSlippageFile.eof())
@@ -99,10 +120,15 @@ void readMarkerSlippage(ifstream& markerSlippageFile)
         markerSlippageFile >> currMarker.chrom;
         markerSlippageFile >> currMarker.start;
         markerSlippageFile >> currMarker.end;
+        markerSlippageFile >> currMarker.motif;
         markerSlippageFile >> tempVal;
         markerSlippageFile >> tempVal;
-        markerSlippageFile >> tempVal;
-        markerSlippageFile >> markerToPSumSlipp[currMarker].i2;
+        resize(markerToNallelesPSumSlippAndStutt[currMarker].i2,3);
+        markerToNallelesPSumSlippAndStutt[currMarker].i2[0] = -1.0;
+        markerSlippageFile >> markerToNallelesPSumSlippAndStutt[currMarker].i2[1];
+        markerSlippageFile >> markerToNpns[currMarker];
+        markerSlippageFile >> markerToNallelesPSumSlippAndStutt[currMarker].i1;
+        markerSlippageFile >> markerToNallelesPSumSlippAndStutt[currMarker].i2[2];
     }
 }
 
@@ -153,7 +179,7 @@ double getPval(Marker marker, AttributeLine currentLine)
 }
 
 //Parses one line from attribute file by filling up and returning an AttributeLine, also initializes markerToSizeAndModel map using the labels 
-void parseNextLine(float winner, float second, ifstream& attributeFile, Marker& marker, String<string> firstLine, bool useFirstLine, LabelProps& slippCount)
+AttributeLine parseNextLine(float winner, float second, ifstream& attributeFile, Marker& marker, String<string> firstLine, bool useFirstLine, LabelProps& slippCount)
 {
     AttributeLine currentLine;
     string temp;    
@@ -185,52 +211,255 @@ void parseNextLine(float winner, float second, ifstream& attributeFile, Marker& 
         attributeFile >> temp;
     }
     currentLine.pValue = getPval(marker, currentLine);
-    markerToPSumSlipp[marker].i1 += currentLine.pValue;
-    if (currentLine.numOfRepeats == winner || currentLine.numOfRepeats == second)    
-        slippCount.p1 += currentLine.pValue;    
+    markerToNallelesPSumSlippAndStutt[marker].i2[0] += currentLine.pValue;
+    if (currentLine.numOfRepeats == winner || currentLine.numOfRepeats == second)
+    {
+        slippCount.p1 += currentLine.pValue;
+        currentLine.label = 1;
+    }
     else 
     {
-        if ((currentLine.numOfRepeats == winner - 1) || (currentLine.numOfRepeats == second - 1))        
-            slippCount.p2 += currentLine.pValue;        
+        float diff1 = fabs(currentLine.numOfRepeats - winner), diff2 = fabs(currentLine.numOfRepeats - second);
+        if (fmod(diff1,1.0)<0.05 || fmod(diff2,1.0)<0.05)
+        {
+            slippCount.p2 += currentLine.pValue;
+            currentLine.label = 2;
+        }
         else
         {
             slippCount.p3 += currentLine.pValue;
+            currentLine.label = 3;
         }
     }
+    return currentLine;
+}
+
+double estimateSlippage(double current_sp)
+{
+    vector<double> weights;
+    vector<double> slippFragments;
+    double currMarkSlipp, currPvalSum, weightSum = 0, fullMotifSlippageSum = 0;
+    map<Marker, Pair<int, String<double> > >::const_iterator markerEnd =  markerToNallelesPSumSlippAndStutt.end(); 
+    for (map<Marker, Pair<int, String<double> > >::iterator markerStart =  markerToNallelesPSumSlippAndStutt.begin(); markerStart != markerEnd; ++markerStart)
+    {            
+        if ( markerStart->second.i2[0] == -1.0)        
+            continue;
+        if (markerStart->second.i2[1] == 0)
+            currMarkSlipp = 0.001;
+        else
+            currMarkSlipp = markerStart->second.i2[1];
+        currPvalSum = markerStart->second.i2[0];
+        weights.push_back(currPvalSum/((current_sp+currMarkSlipp)*(1-(current_sp+currMarkSlipp))));
+    }
+    weightSum = accumulate(weights.begin(),weights.end(),0.0);
+    unsigned index = 0;
+    for (map<Marker, Pair<int, String<double> > >::iterator markerStart =  markerToNallelesPSumSlippAndStutt.begin(); markerStart != markerEnd; ++markerStart)
+    {
+        if ( markerStart->second.i2[0] == -1.0)
+            continue;
+        String<AttributeLine> readsAtI = markerToReads[markerStart->first];
+        for (unsigned i=0; i<length(readsAtI); ++i)
+        {
+            if (readsAtI[i].label == 2)
+                fullMotifSlippageSum += readsAtI[i].pValue;
+        }
+        slippFragments.push_back(std::max(0.0,(weights[index]/weightSum)*((fullMotifSlippageSum/markerStart->second.i2[0]) - markerStart->second.i2[1])));
+        fullMotifSlippageSum = 0;
+        ++index;
+    }
+    double slippage = accumulate(slippFragments.begin(),slippFragments.end(),0.0);
+    return slippage;
+}
+
+String<Pair<float> > makeGenotypes(std::set<float>& alleles)
+{
+    String<Pair<float> > genotypes;
+    String<float> alleleString;
+    std::set<float>::reverse_iterator allelesBegin = alleles.rend();
+    for (std::set<float>::reverse_iterator alleleIt = alleles.rbegin(); alleleIt!=allelesBegin; ++alleleIt)
+        appendValue(alleleString, *alleleIt);  
+    for (unsigned i=0; i<length(alleleString); ++i)
+    {
+        appendValue(genotypes,Pair<float>(alleleString[i],alleleString[i]));
+        if (i == (length(alleleString)-1))
+            break;
+        for (unsigned j=i+1; j<length(alleleString); ++j)
+            appendValue(genotypes,Pair<float>(alleleString[j],alleleString[i])); 
+    }
+    reverse(genotypes);
+    return genotypes;
+}
+
+int findMaxIndex(String<long double>& probs)
+{
+    int maxIndex = 0;
+    long double maxValue = probs[0];
+    for (unsigned i = 1; i<length(probs); ++i)
+    {
+        if (probs[i]>maxValue)
+        {
+            maxIndex=i;
+            maxValue=probs[i];
+        }
+    }
+    return maxIndex;
+}
+
+float dgeom(int diff, double psucc) 
+{
+    if (diff < 0) 
+        return 0;
+    double p = psucc;
+    for (int i = 0; i < diff; i++) 
+    {
+        p = p*(1-psucc);
+    }
+    return p;
+}
+
+float dpois(int step, float mean) {
+  if (step < 0) 
+    return 0;
+  float p = exp(-1*mean);
+  for (int i = 0; i < step; i++) {
+    p = p*mean;
+    p = p/(i+1);
+  }
+  return p;  
+}
+
+void relabelReads(std::set<float>& newGenotype, String<AttributeLine>& reads)
+{
+    for (unsigned i = 0; i < length(reads); ++i)
+    {
+        if (newGenotype.find(reads[i].numOfRepeats) != newGenotype.end())
+            reads[i].label = 1;
+        else
+        {
+            std::set<float>::iterator it=newGenotype.begin();
+            float allele1 = *it;
+            ++it;
+            float allele2 = *it;
+            float diff1 = fabs(allele1-reads[i].numOfRepeats), diff2 = fabs(allele2-reads[i].numOfRepeats);
+            if (fmod(diff1,1.0)<0.05 || fmod(diff2,1.0)<0.05)
+                reads[i].label = 2;
+            else
+                reads[i].label = 3;
+        }
+    }
+}
+
+bool determineGenotype(String<AttributeLine>& reads, double s_ij, String<Pair<float> > genotypes, int numberOfAlleles, int motifLength, double psucc)
+{
+    Pair<float> genotypeToCheck;
+    AttributeLine readToCheck;
+    String<long double> probs;
+    std::set<float> currentGenotype, newGenotype;
+    resize(probs, length(genotypes));
+    bool isHomo;
+    float posNegSlipp = 1, posNegSlipp2 = 1, lambda = std::max((double)0.01,s_ij), diff, diff2;
+    int indexOfWinner;    
+    for (unsigned i=0; i<length(genotypes); ++i)
+    {
+        probs[i] = 1;
+        genotypeToCheck = genotypes[i];
+        isHomo = genotypeToCheck.i1 == genotypeToCheck.i2;
+        for (unsigned j=0; j<length(reads); ++j)
+        {
+            posNegSlipp = 1;
+            posNegSlipp2 = 1;
+            readToCheck = reads[j];
+            if (readToCheck.label == 1)
+                currentGenotype.insert(readToCheck.numOfRepeats);
+            if (isHomo)
+            {
+                if (readToCheck.numOfRepeats < genotypeToCheck.i1)
+                    posNegSlipp = 0.85;
+                if (readToCheck.numOfRepeats > genotypeToCheck.i1)
+                    posNegSlipp = 0.15;
+                diff = fabs(readToCheck.numOfRepeats - genotypeToCheck.i1);
+                probs[i] *= (readToCheck.pValue * dgeom(static_cast<int>((diff-(float)floor(diff))*motifLength), psucc) * dpois(floor(diff), lambda) * posNegSlipp + ((double)(1.0-readToCheck.pValue)/(double)numberOfAlleles));                
+            }
+            else
+            {
+                if (readToCheck.numOfRepeats < genotypeToCheck.i1)
+                    posNegSlipp = 0.8;
+                if (readToCheck.numOfRepeats > genotypeToCheck.i1)
+                    posNegSlipp = 0.2;
+                if (readToCheck.numOfRepeats < genotypeToCheck.i2)
+                    posNegSlipp2 = 0.8;
+                if (readToCheck.numOfRepeats > genotypeToCheck.i2)
+                    posNegSlipp2 = 0.2;
+                diff = fabs(readToCheck.numOfRepeats - genotypeToCheck.i1);
+                diff2 = fabs(readToCheck.numOfRepeats - genotypeToCheck.i2);
+                probs[i] *= (readToCheck.pValue * 0.5 * (dgeom(static_cast<int>((diff-(float)floor(diff))*motifLength), psucc) * dpois(floor(diff), lambda) * posNegSlipp + dgeom(static_cast<int>((diff2-(float)floor(diff2))*motifLength), psucc) * dpois(floor(diff2), lambda) * posNegSlipp2) + ((double)(1.0-readToCheck.pValue)/(double)numberOfAlleles));
+            }
+        }
+    } 
+    indexOfWinner = findMaxIndex(probs);
+    newGenotype.insert(genotypes[indexOfWinner].i1);
+    newGenotype.insert(genotypes[indexOfWinner].i2);
+    if (newGenotype == currentGenotype)
+        return false;
+    else
+    {
+        relabelReads(newGenotype,reads);
+        return true;
+    }
+}
+
+int updateGenotypes(double current_sp)
+{
+    int nChanged = 0;
+    bool changed;
+    String<Pair<float> > genotypes;
+    map<Marker, Pair<int, String<double> > >::const_iterator markerEnd =  markerToNallelesPSumSlippAndStutt.end(); 
+    for (map<Marker, Pair<int, String<double> > >::iterator markerStart =  markerToNallelesPSumSlippAndStutt.begin(); markerStart != markerEnd; ++markerStart)
+    {
+        if ( markerStart->second.i2[0] == -1.0)
+            continue;
+        genotypes = markerToAllelesAndGenotypes[markerStart->first].i2;
+        changed = determineGenotype(markerToReads[markerStart->first], current_sp+markerStart->second.i2[1], genotypes, markerStart->second.i1, markerStart->first.motif.size(), markerStart->second.i2[2]);
+        if (changed)
+            ++nChanged;
+    }
+    return nChanged;
 }
 
 int main(int argc, char const ** argv)
 {   
     //Check arguments.
-    if (argc != 6)
+    if (argc != 5)
     {
-        cerr << "USAGE: " << argv[0] << " pathToAttributeFile/ PN-id outputFile markerSlippageFile modelDirectory/";
+        cerr << "USAGE: " << argv[0] << " pathToAttributeFile/PN-id outputFile markerSlippageFile modelDirectory/";
         return 1;
     }
-    CharString attDir = argv[1], modelDir = argv[5];
-    string pnId = argv[2];
-    append(attDir,pnId);
-    ifstream attributeFile(toCString(attDir)), slippageFile(argv[4]);
-    ofstream outputFile(argv[3]);  
-    LabelProps slippCount;
-    slippCount.p1 = 0;
-    slippCount.p2 = 0;
-    slippCount.p3 = 0;
-    double slippage; 
-    string nextLine;
-    Marker marker;
-    int numberOfReads, numberOfMarkers = 0;
-    float winner, second;
-    Pair<int, String<string> > numberOfWordsAndWords;        
+    CharString attDir = argv[1], modelDir = argv[4];
+    ifstream attributeFile(toCString(attDir)), slippageFile(argv[3]);
     if(attributeFile.fail())
     {
         cout << "Unable to locate attributes file." << endl;
         return 1;            
     }
+    ofstream outputFile(argv[2]);
+    if(outputFile.fail())
+    {
+        cout << "Unable to create output file." << endl;
+        return 1;            
+    }
+    string pnId;
+    LabelProps slippCount;
+    slippCount.p1 = 0;
+    slippCount.p2 = 0;
+    slippCount.p3 = 0; 
+    string nextLine;
+    Marker marker;
+    int numberOfReads, nMarkers = 0, nChanged = 0;
+    float winner, second;
+    Pair<int, String<string> > numberOfWordsAndWords;            
     attributeFile >> pnId;
-    cout << "Computing pnSlippage for: " << pnId << endl;
     readMarkerSlippage(slippageFile);
-    cout << "Finished reading the markerSlippage." << endl;
+    AttributeLine currentLine;
     while (!attributeFile.eof())
     {        
         getline (attributeFile,nextLine);
@@ -238,12 +467,11 @@ int main(int argc, char const ** argv)
             continue;
         numberOfWordsAndWords = countNumberOfWords(nextLine);
         if (numberOfWordsAndWords.i1 == 9) 
-        {                      
-            ++numberOfMarkers;
+        {
             marker.chrom = numberOfWordsAndWords.i2[0];
-            marker.start = lexicalCast<int>(numberOfWordsAndWords.i2[1]);             
-            marker.end = lexicalCast<int>(numberOfWordsAndWords.i2[2]);                
-            numberOfReads = lexicalCast<int>(numberOfWordsAndWords.i2[5]);                
+            marker.start = lexicalCast<int>(numberOfWordsAndWords.i2[1]);
+            marker.end = lexicalCast<int>(numberOfWordsAndWords.i2[2]);
+            numberOfReads = lexicalCast<int>(numberOfWordsAndWords.i2[5]);
             winner = lexicalCast<float>(numberOfWordsAndWords.i2[7]);
             second = lexicalCast<float>(numberOfWordsAndWords.i2[8]);
             if (numberOfReads >= 10)
@@ -255,24 +483,28 @@ int main(int argc, char const ** argv)
                 append(modelDir, startStr.str());
                 startStr.clear();
                 startStr.str("");
-                const char *model_in_file = toCString(modelDir);                    
+                const char *model_in_file = toCString(modelDir);
                 markerToModel[marker] = load_model(model_in_file);
-                modelDir = argv[5];
+                modelDir = argv[4];
             }
             else
-                markerToPSumSlipp[marker].i1 = -1.0;
+                markerToNallelesPSumSlippAndStutt[marker].i2[0] = -1.0;
         }
         if (numberOfWordsAndWords.i1 == 11)
         {
             if (numberOfReads >= 10)
-            {                
+            {
+                ++nMarkers;
                 for (unsigned i = 0; i < numberOfReads; ++i)
                 {
                     if (i == 0)
-                        parseNextLine(winner, second, attributeFile, marker, numberOfWordsAndWords.i2, true, slippCount);
+                        currentLine = parseNextLine(winner, second, attributeFile, marker, numberOfWordsAndWords.i2, true, slippCount);
                     else 
-                        parseNextLine(winner, second, attributeFile, marker, numberOfWordsAndWords.i2, false, slippCount);
+                        currentLine = parseNextLine(winner, second, attributeFile, marker, numberOfWordsAndWords.i2, false, slippCount);
+                    appendValue(markerToReads[marker],currentLine);
+                    markerToAllelesAndGenotypes[marker].i1.insert(currentLine.numOfRepeats);
                 }
+                markerToAllelesAndGenotypes[marker].i2 = makeGenotypes(markerToAllelesAndGenotypes[marker].i1);                
             }
             else 
             {
@@ -280,51 +512,30 @@ int main(int argc, char const ** argv)
                     getline (attributeFile,nextLine);
             }
         }                
-        if (numberOfWordsAndWords.i1 != 9 && numberOfWordsAndWords.i1 != 11) 
+        if (numberOfWordsAndWords.i1 != 9 && numberOfWordsAndWords.i1 != 11)
             cerr << "Format error in attribute file!" << endl;
-    } 
-    cout << "Finished reading attribute file." << endl;                              
+    }
     attributeFile.close();
-    markerToModel.clear();
-    
-    int nMissing = 0;
-    vector<double> numerators;
-    double currMarkSlipp, currPvalSum, currNumerator, denominator = 0;
-    double finalSub = 0;
-    map<Marker, Pair<double> >::const_iterator markerEnd = markerToPSumSlipp.end(); 
-    for (map<Marker, Pair<double> >::iterator markerStart = markerToPSumSlipp.begin(); markerStart != markerEnd; ++markerStart)
-    {            
-        if (markerToPSumSlipp[markerStart->first].i1 == -1.0)
-        {
-            ++nMissing;
-            continue;
-        }
-        if (markerStart->second.i2 == 0)
-            currMarkSlipp = 0.001;
-        else
-            currMarkSlipp = markerStart->second.i2;    
-        currPvalSum = markerStart->second.i1;
-        currNumerator = (1.0/(currMarkSlipp*(1.0-currMarkSlipp))) * (currPvalSum/(slippCount.p1 + slippCount.p2 + slippCount.p3));
-        numerators.push_back(currNumerator);
-    }
-    denominator = accumulate(numerators.begin(),numerators.end(),0.0);
-    if (numberOfMarkers - nMissing > 1)
+    cout << "Finished reading attributes for: " << pnId << endl;
+    double current_sp = slippCount.p2/(slippCount.p1 + slippCount.p2 + slippCount.p3);
+    if (nMarkers < 1)
     {
-        unsigned index = 0;
-        for (map<Marker, Pair<double> >::iterator markerStart = markerToPSumSlipp.begin(); markerStart != markerEnd; ++markerStart)
-        {
-            if (markerToPSumSlipp[markerStart->first].i1 == -1.0)
-                continue;
-            finalSub += markerStart->second.i2 * numerators[index]/denominator;
-            ++index;    
-        }
+        current_sp = 0.0;
+        cout << "No markers with more than minimum number of reads for: " << pnId << endl;
+        outputFile << pnId << "\t" << current_sp << endl;
+        return 0;
     }
-    if (numberOfMarkers - nMissing < 1)
-        slippage = 0.0;
-    else 
-        slippage = (slippCount.p2 + slippCount.p3)/(slippCount.p1 + slippCount.p2 + slippCount.p3) - finalSub;
-    cout << "Slippage: (" << slippCount.p2 << " + " << slippCount.p3 << ")/(" << slippCount.p1 << " + " << slippCount.p2 <<  " + " <<  slippCount.p3 << ") - " << finalSub << endl;
-    cout << "Number of markers available for estimating pnSlippage for " << pnId << " is: " << numberOfMarkers - nMissing << endl;
-    outputFile << pnId << "\t" << slippage << endl;    
+    double changed = 1;    
+    while (changed > 0.005)
+    {
+        current_sp = estimateSlippage(current_sp);
+        cout << "Estimated slippage." << endl;
+        nChanged = updateGenotypes(current_sp);
+        cout << "Updated genotypes." << endl;
+        changed = (float)nChanged/(float)nMarkers;
+        cout << nChanged << " " << nMarkers << endl;
+    }      
+    cout << "Number of markers available for estimating pnSlippage for " << pnId << " is: " << nMarkers << endl;
+    outputFile << pnId << "\t" << current_sp << endl;    
     return 0;    
 }
