@@ -220,7 +220,7 @@ AttributeLine parseNextLine(float winner, float second, ifstream& attributeFile,
     else 
     {
         float diff1 = fabs(currentLine.numOfRepeats - winner), diff2 = fabs(currentLine.numOfRepeats - second);
-        if (fmod(diff1,1.0)<0.05 || fmod(diff2,1.0)<0.05)
+        if (std::min(diff1,diff2)>=0.9)
         {
             slippCount.p2 += currentLine.pValue;
             currentLine.label = 2;
@@ -341,7 +341,7 @@ void relabelReads(std::set<float>& newGenotype, String<AttributeLine>& reads)
             ++it;
             float allele2 = *it;
             float diff1 = fabs(allele1-reads[i].numOfRepeats), diff2 = fabs(allele2-reads[i].numOfRepeats);
-            if (fmod(diff1,1.0)<0.05 || fmod(diff2,1.0)<0.05)
+            if (std::min(diff1,diff2)>=0.9)
                 reads[i].label = 2;
             else
                 reads[i].label = 3;
@@ -441,7 +441,9 @@ int main(int argc, char const ** argv)
         cout << "Unable to locate attributes file." << endl;
         return 1;            
     }
-    ofstream outputFile(argv[2]);
+    ofstream outputFile;
+    outputFile.open(argv[2], ios_base::app);
+    //ofstream outputFile(argv[2]);
     if(outputFile.fail())
     {
         cout << "Unable to create output file." << endl;
