@@ -263,11 +263,11 @@ double estimateSlippage(double current_sp)
             if (readsAtI[i].label == 2)
                 fullMotifSlippageSum += readsAtI[i].pValue;
         }
-        slippFragments.push_back(std::max(0.0,(weights[index]/weightSum)*((fullMotifSlippageSum/markerStart->second.i2[0]) - markerStart->second.i2[1])));
+        slippFragments.push_back((weights[index]/weightSum)*((fullMotifSlippageSum/markerStart->second.i2[0]) - markerStart->second.i2[1]));
         fullMotifSlippageSum = 0;
         ++index;
     }
-    double slippage = accumulate(slippFragments.begin(),slippFragments.end(),0.0);
+    double slippage = std::max(0.0,accumulate(slippFragments.begin(),slippFragments.end(),0.0));
     return slippage;
 }
 
@@ -357,7 +357,7 @@ bool determineGenotype(String<AttributeLine>& reads, double s_ij, String<Pair<fl
     std::set<float> currentGenotype, newGenotype;
     resize(probs, length(genotypes));
     bool isHomo;
-    float posNegSlipp = 1, posNegSlipp2 = 1, lambda = std::max((double)0.01,s_ij), diff, diff2;
+    float posNegSlipp = 1, posNegSlipp2 = 1, lambda = std::max((double)0.001,s_ij), diff, diff2;
     int indexOfWinner;    
     for (unsigned i=0; i<length(genotypes); ++i)
     {
@@ -519,7 +519,7 @@ int main(int argc, char const ** argv)
     }
     attributeFile.close();
     cout << "Finished reading attributes for: " << pnId << endl;
-    double current_sp = slippCount.p2/(slippCount.p1 + slippCount.p2 + slippCount.p3);
+    double current_sp = (0.5*slippCount.p2)/(slippCount.p1 + slippCount.p2 + slippCount.p3);
     if (nMarkers < 1)
     {
         current_sp = 0.0;

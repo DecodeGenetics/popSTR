@@ -302,11 +302,11 @@ double estimateSlippage(double current_sp)
         if ( markerStart->second.i2[0] == -1.0)
             continue;
         fullMotifSlippageSum = markerStart->second.i2[3];
-        slippFragments.push_back(std::max(0.0,(weights[index]/weightSum)*((fullMotifSlippageSum/markerStart->second.i2[0]) - markerStart->second.i2[1])));
+        slippFragments.push_back((weights[index]/weightSum)*((fullMotifSlippageSum/markerStart->second.i2[0]) - markerStart->second.i2[1]));
         fullMotifSlippageSum = 0;
         ++index;
     }
-    double slippage = accumulate(slippFragments.begin(),slippFragments.end(),0.0);
+    double slippage = std::max(0.0,accumulate(slippFragments.begin(),slippFragments.end(),0.0));
     return slippage;
 }
 
@@ -453,7 +453,7 @@ int main(int argc, char const ** argv)
         }
     }
     else 
-        slippage = slippCount.p2/(slippCount.p1 + slippCount.p2 + slippCount.p3);
+        slippage = (0.5*slippCount.p2)/(slippCount.p1 + slippCount.p2 + slippCount.p3);
     outputFile << pnId << "\t" << slippage << "\t" <<  nMarkers << endl;    
     return 0;    
 }
