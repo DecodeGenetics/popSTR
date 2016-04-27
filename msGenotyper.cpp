@@ -515,35 +515,46 @@ void fillRecordPn(GenotypeInfo genotype, VcfRecord& record, String<Pair<float> >
         {
             index = -1;
             genotypeToLookFor = genotypesAtThisMarker[i];
-            for (unsigned j=0; j<length(genotype.genotypes); ++j)
+            if (genotypeToLookFor == genotype.genotype)
             {
-                genotypeToCompare=genotype.genotypes[j];
-                if (genotypeToCompare == genotypeToLookFor)
-                {
-                    index = j;
-                    break;
-                }
-            }
-            if (index == -1)
-            {
-                ss << 255;
+                ss << 0;
                 str = ss.str();
                 append(gtInfo,str);
             }
             else
             {
-                numerator = genotype.pValues[index];
-                if (numerator == 0)
-                    pl = 255;
+                for (unsigned j=0; j<length(genotype.genotypes); ++j)
+                {
+                    genotypeToCompare=genotype.genotypes[j];
+                    if (genotypeToCompare == genotypeToLookFor)
+                    {
+                        index = j;
+                        break;
+                    }
+                }
+                if (index == -1)
+                {
+                    ss << 255;
+                    str = ss.str();
+                    append(gtInfo,str);
+                }
                 else
                 {
-                    denominator = genotype.pValue;
-                    pl = round(-10*log10((long double)numerator/(long double)denominator));
-                    pl = std::min(255,pl);
+                    numerator = genotype.pValues[index];
+                    if (numerator == 0)
+                        pl = 255;
+                    else
+                    {
+                        denominator = genotype.pValue;
+                        pl = round(-10*log10(((long double)numerator*1000)/((long double)denominator*1000)));
+                        pl = std::min(255,pl);
+                        if (pl<0)
+                            pl = 255;
+                    }
+                    ss << pl;
+                    str = ss.str();
+                    append(gtInfo,str);
                 }
-                ss << pl;
-                str = ss.str();
-                append(gtInfo,str);
             }
             stringClear(ss,str);
             append(gtInfo,",");
