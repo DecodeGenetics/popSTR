@@ -75,6 +75,11 @@ struct GenotypeInfo {
     double fullMotifSlippageSum;
 } ;
 
+struct MakeGenotypesRet {
+	std::set<Pair<float> > genotypesSet;
+	String<Pair<float> > genotypes;
+};
+
 //So I can map from Markers
 bool operator<(const Marker & left, const Marker & right)
 {
@@ -232,38 +237,46 @@ AttributeLine parseNextLine(float winner, float second, ifstream& attributeFile,
     return currentLine;
 }
 
-String<Pair<float> > makeGenotypes(std::set<float> alleles)
+MakeGenotypesRet makeGenotypes(std::set<float> alleles)
 {
-    String<Pair<float> > genotypes;
+	String<Pair<float> > genotypes;
     String<float> alleleString;
+    std::set<Pair<float> > genotypeSet;
     std::set<float>::reverse_iterator allelesBegin = alleles.rend();
     for (std::set<float>::reverse_iterator alleleIt = alleles.rbegin(); alleleIt!=allelesBegin; ++alleleIt)
         appendValue(alleleString, *alleleIt);  
     for (unsigned i=0; i<length(alleleString); ++i)
     {
         appendValue(genotypes,Pair<float>(alleleString[i],alleleString[i]));
+        genotypeSet.insert(Pair<float>(alleleString[i],alleleString[i]));
         if (i == (length(alleleString)-1))
             break;
         for (unsigned j=i+1; j<length(alleleString); ++j)
-            appendValue(genotypes,Pair<float>(alleleString[j],alleleString[i])); 
-    }
-    reverse(genotypes);
-    return genotypes;
-}
-
-int findMaxIndex(String<long double> probs)
-{
-    int maxIndex = 0;
-    long double maxValue = probs[0];
-    for (unsigned i = 1; i<length(probs); ++i)
-    {
-        if (probs[i]>maxValue)
         {
-            maxIndex=i;
-            maxValue=probs[i];
+            appendValue(genotypes,Pair<float>(alleleString[j],alleleString[i]));
+            genotypeSet.insert(Pair<float>(alleleString[j],alleleString[i]));
         }
     }
-    return maxIndex;
+    reverse(genotypes);
+    MakeGenotypesRet returnValue;
+    returnValue.genotypes = genotypes;
+    returnValue.genotypesSet = genotypeSet;
+    return returnValue;
+}
+
+int findMinIndex(String<long double> probs)
+{
+    int minIndex = 0;
+    long double minValue = probs[0];
+    for (unsigned i = 1; i<length(probs); ++i)
+    {
+        if (probs[i]<minValue)
+        {
+            minIndex=i;
+            minValue=probs[i];
+        }
+    }
+    return minIndex;
 }
 
 float dgeom(int diff, double psucc)
@@ -305,7 +318,7 @@ Pair<GenotypeInfo, bool> determineGenotype(String<AttributeLine> reads, double m
     int indexOfWinner, indexOfSecond;    
     for (unsigned i=0; i<length(genotypes); ++i)
     {
-        probs[i] = 1;
+        probs[i] = 0;
         genotypeToCheck = genotypes[i];
         isHomo = genotypeToCheck.i1 == genotypeToCheck.i2;
         for (unsigned j=0; j<length(reads); ++j)
@@ -332,9 +345,9 @@ Pair<GenotypeInfo, bool> determineGenotype(String<AttributeLine> reads, double m
                 //cout << "Diff for homozygous genotype " << genotypeToCheck.i1 << " from read with " << readToCheck.numOfRepeats << " repeats is: " << diff << endl;
                 //cout << "Update of genotype probability: " << probs[i] << " *= (" << readToCheck.pValue << "*" << pdf(myPoiss, abs(diff)) << "*" << posNegSlipp << "+ (" << (double)(1.0-readToCheck.pValue)/(double)numberOfAlleles << "))";
                 if (useGeom)
-                    probs[i] *= (readToCheck.pValue * dgeom(static_cast<int>((diff-(float)floor(diff))*motifLength), psucc) * dpois(floor(diff), lambda) * posNegSlipp + ((double)(1.0-readToCheck.pValue)/(double)numberOfAlleles));
+                    probs[i] += -(double)10*log10(readToCheck.pValue * dgeom(static_cast<int>((diff-(float)floor(diff))*motifLength), psucc) * dpois(floor(diff), lambda) * posNegSlipp + ((double)(1.0-readToCheck.pValue)/(double)numberOfAlleles));
                 else                
-                    probs[i] *= (readToCheck.pValue * dpois(ceil(diff), lambda) * posNegSlipp + ((double)(1.0-readToCheck.pValue)/(double)numberOfAlleles));                
+                    probs[i] += -(double)10*log10(readToCheck.pValue * dpois(ceil(diff), lambda) * posNegSlipp + ((double)(1.0-readToCheck.pValue)/(double)numberOfAlleles));                
                 //cout << " = " << probs[i] << endl;
             }
             else
@@ -353,22 +366,22 @@ Pair<GenotypeInfo, bool> determineGenotype(String<AttributeLine> reads, double m
                 //cout << "Diffs for heterozygous genotype " << genotypeToCheck.i1 << "/" << genotypeToCheck.i2 << " from read with " << readToCheck.numOfRepeats << " repeats are: " << diff << " and " << diff2 << endl;
                 //cout << "Update of genotype probability: " << probs[i] << " *= (" << readToCheck.pValue << " * (0.5 * " << pdf(myPoiss, abs(diff)) << "*" << posNegSlipp << "+ 0.5 * "<< pdf(myPoiss, abs(diff2)) << "*" << posNegSlipp2 << ") + (" << (double)(1.0-readToCheck.pValue)/(double)numberOfAlleles << "))";
                 if (useGeom)
-                    probs[i] *= (readToCheck.pValue * 0.5 * (dgeom(static_cast<int>((diff-(float)floor(diff))*motifLength), psucc) * dpois(floor(diff), lambda) * posNegSlipp + dgeom(static_cast<int>((diff2-(float)floor(diff2))*motifLength), psucc) * dpois(floor(diff2), lambda) * posNegSlipp2) + ((double)(1.0-readToCheck.pValue)/(double)numberOfAlleles));    
+                    probs[i] += -(double)10*log10(readToCheck.pValue * 0.5 * (dgeom(static_cast<int>((diff-(float)floor(diff))*motifLength), psucc) * dpois(floor(diff), lambda) * posNegSlipp + dgeom(static_cast<int>((diff2-(float)floor(diff2))*motifLength), psucc) * dpois(floor(diff2), lambda) * posNegSlipp2) + ((double)(1.0-readToCheck.pValue)/(double)numberOfAlleles));    
                 else
-                    probs[i] *= (readToCheck.pValue * 0.5 * (dpois(ceil(diff), lambda) * posNegSlipp + dpois(ceil(diff2), lambda) * posNegSlipp2) + ((double)(1.0-readToCheck.pValue)/(double)numberOfAlleles));                
+                    probs[i] += -(double)10*log10(readToCheck.pValue * 0.5 * (dpois(ceil(diff), lambda) * posNegSlipp + dpois(ceil(diff2), lambda) * posNegSlipp2) + ((double)(1.0-readToCheck.pValue)/(double)numberOfAlleles));                
             }
         }
         //Debugging code
         //cout << "Genotype: " << genotypeToCheck.i1 << "/" << genotypeToCheck.i2 << " with probability: " << probs[i] << endl;
     } 
     returnValue.pValues = probs;    
-    indexOfWinner = findMaxIndex(probs);
+    indexOfWinner = findMinIndex(probs);
     if (length(probs)>1)
     {
         String<long double> probsCopy = probs;
         erase(probsCopy,indexOfWinner);
-        indexOfSecond = findMaxIndex(probsCopy);
-        enoughDistance = round(-10*log10(probsCopy[indexOfSecond]/probs[indexOfWinner])) > 10;
+        indexOfSecond = findMinIndex(probsCopy);
+        enoughDistance = round(probsCopy[indexOfSecond]-probs[indexOfWinner]) > 10;
     }
     returnValue.genotype = genotypes[indexOfWinner];
     returnValue.pValue = probs[indexOfWinner];
@@ -381,6 +394,56 @@ Pair<GenotypeInfo, bool> determineGenotype(String<AttributeLine> reads, double m
     return Pair<GenotypeInfo, bool>(returnValue, enoughDistance);
 }
 
+unsigned getChrLength(string chrom)
+{
+	if (chrom.compare("chr1") == 0)
+		return 248956422;
+	if (chrom.compare("chr2") == 0)
+		return 242193529;
+	if (chrom.compare("chr3") == 0)
+		return 198295559;
+	if (chrom.compare("chr4") == 0)
+		return 190214555;
+	if (chrom.compare("chr5") == 0)
+		return 181538259;
+	if (chrom.compare("chr6") == 0)
+		return 170805979;
+	if (chrom.compare("chr7") == 0)
+		return 159345973;
+	if (chrom.compare("chr8") == 0)
+		return 145138636;
+	if (chrom.compare("chr9") == 0)
+		return 138394717;
+	if (chrom.compare("chr10") == 0)
+		return 133797422;
+	if (chrom.compare("chr11") == 0)
+		return 135086622;
+	if (chrom.compare("chr12") == 0)
+		return 133275309;
+	if (chrom.compare("chr13") == 0)
+		return 114364328;
+	if (chrom.compare("chr14") == 0)
+		return 107043718;
+	if (chrom.compare("chr15") == 0)
+		return 101991189;
+	if (chrom.compare("chr16") == 0)
+		return 90338345;
+	if (chrom.compare("chr17") == 0)
+		return 83257441;
+	if (chrom.compare("chr18") == 0)
+		return 80373285;
+	if (chrom.compare("chr19") == 0)
+		return 58617616;
+	if (chrom.compare("chr20") == 0)
+		return 64444167;
+	if (chrom.compare("chr21") == 0)
+		return 46709983;
+	if (chrom.compare("chr22") == 0)
+		return 50818468;
+	else
+		return 0;
+}
+
 //Write all sorts of info to the header of the vfc file I pass to the function
 void makeVcfHeader(VcfStream& out, String<string> PnIds, string chrom)
 {
@@ -388,7 +451,8 @@ void makeVcfHeader(VcfStream& out, String<string> PnIds, string chrom)
     //Add IDs of all PNs to the header
     for (unsigned i = 0; i<length(PnIds); ++i)
         appendValue(out.header.sampleNames, PnIds[i]);
-    
+    unsigned chromLength = getChrLength(chrom);
+    string contigString = "<ID=" + chrom + ", length=" + to_string(chromLength) + ">";
     //Complicated way of getting todays date
     time_t rawtime;
     tm* timeinfo;
@@ -397,18 +461,18 @@ void makeVcfHeader(VcfStream& out, String<string> PnIds, string chrom)
     timeinfo = localtime(&rawtime);
     strftime(buffer,10,"%Y%m%d",timeinfo);
     string date = buffer;
-    appendValue(out.header.headerRecords, VcfHeaderRecord("fileformat", "VCFv4.1"));
+    appendValue(out.header.headerRecords, VcfHeaderRecord("fileformat", "VCFv4.2"));
     appendValue(out.header.headerRecords, VcfHeaderRecord("fileDate", date));
-    appendValue(out.header.headerRecords, VcfHeaderRecord("source", "genotyperV1.0"));
+    appendValue(out.header.headerRecords, VcfHeaderRecord("source", "PopSTR"));
+    appendValue(out.header.headerRecords, VcfHeaderRecord("source_bin", "/odinn/tmp/bjarnih/Genotyping/160205/bin/computeReadAttributes"));
+    appendValue(out.header.headerRecords, VcfHeaderRecord("source_bin", "/odinn/tmp/bjarnih/Genotyping/160205/bin/computePnSlippage"));
+    appendValue(out.header.headerRecords, VcfHeaderRecord("source_bin", "/odinn/tmp/bjarnih/Genotyping/160205/bin/msGenotyper"));
     appendValue(out.header.headerRecords, VcfHeaderRecord("reference", "/odinn/data/reference/Homo_sapiens-deCODE-hg38/Sequence/WholeGenomeFasta/genome.fa"));
-    appendValue(out.header.headerRecords, VcfHeaderRecord("INFO", "<ID=END,Number=1,Type=Integer,Description=\"End position of variant\">"));
-    appendValue(out.header.headerRecords, VcfHeaderRecord("INFO", "<ID=MOTIF,Number=1,Type=String,Description=\"Repeat motif\">"));
-    appendValue(out.header.headerRecords, VcfHeaderRecord("INFO", "<ID=REF,Number=1,Type=Float,Description=\"Copy number in reference\">"));
-    appendValue(out.header.headerRecords, VcfHeaderRecord("INFO", "<ID=RL,Number=1,Type=Integer,Description=\"Length of STR in reference in bp\">"));
-    appendValue(out.header.headerRecords, VcfHeaderRecord("INFO", "<ID=VT,Number=String,Type=Flag,Description=\"Variant type\">"));
-    appendValue(out.header.headerRecords, VcfHeaderRecord("FILTER", "<ID=N,Description=\"N = number of alleles in population\">"));
+    appendValue(out.header.headerRecords, VcfHeaderRecord("contig", contigString));
+    appendValue(out.header.headerRecords, VcfHeaderRecord("INFO", "<ID=RefLen,Number=A,Type=Integer,Description=\"Length of the reference allele\">"));
+    appendValue(out.header.headerRecords, VcfHeaderRecord("INFO", "<ID=Motif,Number=1,Type=String,Description=\"Microsatellite repeat motif\">"));
     appendValue(out.header.headerRecords, VcfHeaderRecord("FORMAT", "<ID=GT,Number=1,Type=String,Description=\"Genotype\">"));
-    appendValue(out.header.headerRecords, VcfHeaderRecord("FORMAT", "<ID=PL,Number=G,Type=Integer,Description=\"List of Phred-scaled genotype likelihoods\">"));
+    appendValue(out.header.headerRecords, VcfHeaderRecord("FORMAT", "<ID=PL,Number=G,Type=Integer,Description=\"PHRED-scaled genotype likelihoods\">"));
 }
 
 //Clear a stringstream and a string, I use this a lot in fillRecordMarker/Pn, so a function seemed appropriate
@@ -426,9 +490,9 @@ VcfRecord fillRecordMarker(Marker marker, std::set<float> allelesAtThisMarker)
     record.rID = 0;
     record.beginPos = marker.start-1;
     stringstream ss;
-    ss << marker.start-1;
+    ss << record.beginPos;
     CharString str = ss.str();
-    record.id = str;
+    record.id = marker.chrom + ":" + toCString(str) + ":M";
     stringClear(ss,str);
     //Set smallest allele as reference allele
     std::set<float>::iterator smallestIt = allelesAtThisMarker.begin();
@@ -437,29 +501,15 @@ VcfRecord fillRecordMarker(Marker marker, std::set<float> allelesAtThisMarker)
     str = ss.str();
     record.ref = str;
     stringClear(ss,str);
-    record.qual = 0; //Which qual goes here, one for each call??
-    record.info = "END=";
-    ss << marker.end;
-    str = ss.str();
-    append(record.info,str);
-    stringClear(ss,str);
-    append(record.info,";");
-    append(record.info,"MOTIF=");
-    append(record.info,marker.motif);
-    append(record.info,";");
-    append(record.info,"REF=");
-    ss << marker.refRepeatNum;
-    str = ss.str();
-    append(record.info,str);
-    stringClear(ss,str);
-    append(record.info,";");
-    append(record.info,"RL=");
-    ss << refLength;
-    str = ss.str();
-    append(record.info,str);
-    stringClear(ss,str);
-    append(record.info,";");
-    append(record.info,"VT=STR");
+    record.qual = record.MISSING_QUAL();
+    record.info = "RefLen=";
+	ss << refLength;
+	str = ss.str();
+	append(record.info,str);
+	stringClear(ss,str);
+	append(record.info,";");
+	append(record.info,"Motif=");
+	append(record.info,marker.motif);
     record.format = "GT:PL";
     //Loop over all alternative alleles and add them to ALT field in record
     allelesAtThisMarker.erase(smallestAllele);
@@ -482,9 +532,21 @@ VcfRecord fillRecordMarker(Marker marker, std::set<float> allelesAtThisMarker)
 }
 
 //Fill up the PN-specific fields in the VCF-record.
-void fillRecordPn(GenotypeInfo genotype, VcfRecord& record, String<Pair<float> > genotypesAtThisMarker)
+void fillRecordPn(GenotypeInfo genotype, VcfRecord& record, MakeGenotypesRet genotypesAtThisMarker)
 {
-    stringstream ss;
+	//Go through the set of available genotypes at this marker and check if the Pn's genotype is in there.
+	//If it isn't I pick the most likely one of the available ones.
+	unsigned indexOfCurrGt;
+	while (genotypesAtThisMarker.genotypesSet.find(genotype.genotype)==genotypesAtThisMarker.genotypesSet.end() && length(genotype.genotypes)>1)
+	{
+		indexOfCurrGt = findMinIndex(genotype.pValues);
+		erase(genotype.pValues,indexOfCurrGt);
+		erase(genotype.genotypes,indexOfCurrGt);
+		indexOfCurrGt = findMinIndex(genotype.pValues);
+		genotype.genotype = genotype.genotypes[indexOfCurrGt];
+		genotype.pValue = genotype.pValues[indexOfCurrGt];
+	}
+	stringstream ss;
     CharString str = ss.str();
     CharString gtInfo; //First I make the string containing the genotype info 
     ss << genotype.genotype.i1;
@@ -499,7 +561,7 @@ void fillRecordPn(GenotypeInfo genotype, VcfRecord& record, String<Pair<float> >
     append(gtInfo,":");
     if (genotype.genotype.i1 == 0)
     {
-        for (unsigned i=0; i<length(genotypesAtThisMarker); ++i)
+        for (unsigned i=0; i<length(genotypesAtThisMarker.genotypes); ++i)
                     append(gtInfo,"0,");
         eraseBack(gtInfo);    
     }
@@ -511,10 +573,10 @@ void fillRecordPn(GenotypeInfo genotype, VcfRecord& record, String<Pair<float> >
         long double numerator;
         long double denominator;
         int pl;
-        for (unsigned i=0; i<length(genotypesAtThisMarker); ++i)
+        for (unsigned i=0; i<length(genotypesAtThisMarker.genotypes); ++i)
         {
             index = -1;
-            genotypeToLookFor = genotypesAtThisMarker[i];
+            genotypeToLookFor = genotypesAtThisMarker.genotypes[i];
             if (genotypeToLookFor == genotype.genotype)
             {
                 ss << 0;
@@ -541,16 +603,11 @@ void fillRecordPn(GenotypeInfo genotype, VcfRecord& record, String<Pair<float> >
                 else
                 {
                     numerator = genotype.pValues[index];
-                    if (numerator == 0)
+                    denominator = genotype.pValue;
+                    pl = round(numerator-denominator);
+                    pl = std::min(255,pl);
+                    if (pl<0)
                         pl = 255;
-                    else
-                    {
-                        denominator = genotype.pValue;
-                        pl = round(-10*log10(((long double)numerator*1000)/((long double)denominator*1000)));
-                        pl = std::min(255,pl);
-                        if (pl<0)
-                            pl = 255;
-                    }
                     ss << pl;
                     str = ss.str();
                     append(gtInfo,str);
@@ -956,7 +1013,7 @@ int main(int argc, char const ** argv)
     VcfRecord record;        
     stringstream ss;
     CharString str;    
-    String<Pair<float> > genotypesAtThisMarker;
+    MakeGenotypesRet genotypesAtThisMarker;
     double alleleDistance;
     Pair<double, int> slippAndNavail;
     
@@ -1037,11 +1094,11 @@ int main(int argc, char const ** argv)
                     currAllele = *pnAlls;
                     allelesToConsider.insert(currAllele);
                 }
-                genotypesToConsider = makeGenotypes(allelesToConsider);  
+                genotypesToConsider = makeGenotypes(allelesToConsider).genotypes;
                 //make decision about genotype for PnId at the current marker.        
                 changed = determineGenotype(reads, markerToSizeAndModel[it->first].i1.i2+pnToSize[PnId].i1, genotypesToConsider, numOfAlleles, it->first.motif.size(), geomP);
                 PnAndMarkerToGenotype[Pair<string,Marker>(PnId,it->first)] = changed.i1; 
-                if (changed.i2 || !changed.i2)
+                if (changed.i2)
                 {
                     markerToAlleles[it->first].insert(changed.i1.genotype.i1);
                     markerToAlleles[it->first].insert(changed.i1.genotype.i2);
@@ -1076,10 +1133,10 @@ int main(int argc, char const ** argv)
             currAllele = *pnAlls;
             allelesToConsider.insert(currAllele);
         }
-        genotypesToConsider = makeGenotypes(allelesToConsider);
+        genotypesToConsider = makeGenotypes(allelesToConsider).genotypes;
         changed = determineGenotype(reads, markerToSizeAndModel[it->first].i1.i2+pnToSize[PnId].i1, genotypesToConsider, numOfAlleles, it->first.motif.size(), geomP);
         PnAndMarkerToGenotype[Pair<string,Marker>(PnId,it->first)] = changed.i1;
-        if (changed.i2 || !changed.i2)
+        if (changed.i2)
         {
             markerToAlleles[it->first].insert(changed.i1.genotype.i1);
             markerToAlleles[it->first].insert(changed.i1.genotype.i2);
@@ -1105,17 +1162,17 @@ int main(int argc, char const ** argv)
         //Write vcf record for the marker I just finished.
         if (writeVcf) 
         {     
-            //Check the number of alleles in the population, shouldn't be above ~20 but should be 2 or higher to be considered polymorphic.
-            /*if ((markerToAlleles[thisMarker].size() > 20) || (markerToAlleles[thisMarker].size() < 2))
+            //Check the number of alleles in the population, should be 2 or higher to be considered polymorphic.
+            if (markerToAlleles[thisMarker].size() < 2)
             {
                 cout << "Not enough or too many alleles at marker " << z << endl;
                 ++z;
                 continue;      
-            }*/
+            }
             //Make a String<Pair<float> > which contains a list of genotypes
             genotypesAtThisMarker = makeGenotypes(markerToAlleles[thisMarker]);
             //Compute abs(allele1-allele2)*allele1Freq*allele2Freq for all genotypes and return average of those, estimate of distance between alleles.
-            alleleDistance = computeAlleleDist(genotypesAtThisMarker, markerToAlleleFreqs[it->first].i1, PnsAtMarker); 
+            alleleDistance = computeAlleleDist(genotypesAtThisMarker.genotypes, markerToAlleleFreqs[it->first].i1, PnsAtMarker);
             //First fill marker specific fields of vcfRecord
             record = fillRecordMarker(thisMarker, markerToAlleles[thisMarker]);       
             //Loop over Pns and fill in PN specific fields of vcfRecord for each PN
@@ -1141,7 +1198,7 @@ int main(int argc, char const ** argv)
             }                
             ss << markerToAlleles[thisMarker].size();
             str = ss.str();
-            record.filter = str;
+            record.filter = ".";
             stringClear(ss,str);
             //After adding info for all PNs at thisMarker I write the record to the vcf output file
             if (writeRecord(out, record) != 0)
