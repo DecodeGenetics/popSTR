@@ -591,7 +591,7 @@ VcfRecord fillRecordMarker(Marker marker, std::set<float> allelesAtThisMarker)
     record.rID = 0;
     record.beginPos = marker.start-1;
     stringstream ss;
-    ss << record.beginPos;
+    ss << record.beginPos+1;
     CharString str = ss.str();
     record.id = marker.chrom + ":" + toCString(str) + ":M";
     stringClear(ss,str);
