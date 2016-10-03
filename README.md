@@ -94,5 +94,5 @@ When finishing an iteration of msGenotyper, two things must be done before start
    
 A specific vcf file will be created for each interval and when all intervals have finished running these must be manually concatenated into a single file
 
-    `grep ^# [vcfOutputDirectory]/vcfFileName_1.vcf > [vcfOutputDirectory]/vcfFileName.vcf`
-    `for i in {1..[numIntervals]}; do grep -v ^# [vcfOutputDirectory]/vcfFileName_${i}.vcf >> [vcfOutputDirectory]/vcfFileName.vcf; done`
+    grep ^# [vcfOutputDirectory]/vcfFileName_1.vcf > [vcfOutputDirectory]/vcfFileName.vcf
+    for i in {1..[numIntervals]}; do grep -v ^# [vcfOutputDirectory]/vcfFileName_${i}.vcf >> [vcfOutputDirectory]/vcfFileName.vcf; done
