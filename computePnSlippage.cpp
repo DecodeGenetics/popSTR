@@ -95,7 +95,7 @@ void fillProblemX(int idx, AttributeLine currentLine, problem& myProb)
 
 void appendChrAndPnId(CharString& dir, string chromNum, string pnId)
 {
-    append(dir,"chr");
+    append(dir,"/attributes/chr");
     append(dir,chromNum);
     append(dir,"/");
     //append(dir,"highCovFiltered/");
@@ -158,7 +158,7 @@ void readMarkerSlippage(CharString markerSlippDir, int chromNum, string itNumStr
 {
     Marker currMarker;
     string tempVal;
-    append(markerSlippDir,"chr");
+    append(markerSlippDir,"/chr");
     stringstream chrStr;
     chrStr << chromNum;
     append(markerSlippDir, chrStr.str());
@@ -313,12 +313,12 @@ double estimateSlippage(double current_sp)
 int main(int argc, char const ** argv)
 {   
     //Check arguments.
-    if (argc != 5 && argc != 8)
+    if (argc != 6 && argc != 9)
     {
-        cerr << "USAGE: " << argv[0] << " attributesDirectory/ PN-id outputFile iterationNumber [markerSlippageDirectory/ modelAndLabelDir/ previousSlippageRate]";
+        cerr << "USAGE: " << argv[0] << " attributesDirectory PN-id outputFile iterationNumber minPnsPerMarker [markerSlippageDirectory modelAndLabelDir previousSlippageRate]";
         return 1;
     }
-    int minNpns = 50;
+    int minNpns = lexicalCast<int>(argv[5]);
     double slippage, pn_previous;
     CharString attDir = argv[1], outputPath = argv[3], modelDir, labDir, currLabDir, currAttDir, slippDir;
     string pnId = argv[2], itNumStr = argv[4];
@@ -326,13 +326,13 @@ int main(int argc, char const ** argv)
     append(outputPath, itNumStr);
     outputFile.open(toCString(outputPath), ios_base::app);
     bool haveMarkSlipp = false;
-    if (argc == 8)
+    if (argc == 9)
     {
         haveMarkSlipp = true;
-        slippDir = argv[5];
-        modelDir = argv[6];
-        labDir = argv[6];
-        pn_previous = lexicalCast<double>(argv[7]);
+        slippDir = argv[6];
+        modelDir = argv[7];
+        labDir = argv[7];
+        pn_previous = lexicalCast<double>(argv[8]);
         cout << pn_previous << endl;
     }               
     string chrId;    
@@ -345,7 +345,7 @@ int main(int argc, char const ** argv)
     int numberOfReads, nMarkers = 0;
     float winner, second;
     Pair<int, String<string> > numberOfWordsAndWords;
-    for (unsigned i=1; i<2; ++i)
+    for (unsigned i=1; i<23; ++i)
     {
         stringstream ss;
         ss << i;
@@ -362,7 +362,7 @@ int main(int argc, char const ** argv)
         if (haveMarkSlipp)
         {            
             currLabDir = labDir;  
-            append(currLabDir,"chr");
+            append(currLabDir,"/chr");
             append(currLabDir,chrId);
             append(currLabDir,"/");
             append(currLabDir,pnId);
@@ -392,6 +392,7 @@ int main(int argc, char const ** argv)
                     labels >> second;
                     if (numberOfReads >= 10 && markerToNpns[marker] >= minNpns)
                     {
+                        append(modelDir, "/");
                         append(modelDir, marker.chrom);
                         append(modelDir, "/");
                         append(modelDir, marker.chrom);
@@ -403,7 +404,7 @@ int main(int argc, char const ** argv)
                         startStr.str("");
                         const char *model_in_file = toCString(modelDir);                    
                         markerToModel[marker] = load_model(model_in_file);
-                        modelDir = argv[6];
+                        modelDir = argv[7];
                     }
                     else
                          markerToNallelesPSumSlippAndStutt[marker].i2[0] = -1.0;

@@ -587,25 +587,25 @@ int main(int argc, char const ** argv)
     time_t begin = time(0);
     //int callsToComputeReadInfo = 0;
     //Check arguments.
-    if (argc != 8)
+    if (argc != 7)
     {
-        cerr << "USAGE: " << argv[0] << " IN.bam IN.bam.bai outputDirectory markerInfoFile minFlankLength maxRepeatLength PN-id\n";
+        cerr << "USAGE: " << argv[0] << " IN.bam outputDirectory markerInfoFile minFlankLength maxRepeatLength PN-id\n";
         return 1;
     }
     
     //Save PN-id
-    int maxRepeatLength = lexicalCast<int>(argv[6]);
-    CharString PN_ID = argv[7];
+    int maxRepeatLength = lexicalCast<int>(argv[5]);
+    CharString PN_ID = argv[6];
     int windowSize = 5;
     
     //min-flanking area
-    int minFlank = lexicalCast<int>(argv[5]);
+    int minFlank = lexicalCast<int>(argv[4]);
     
     //To store marker info
     String<STRinfo> markers;
     STRinfo currInfo;
     //Read all markers into memory
-    ifstream markerFile(argv[4]);
+    ifstream markerFile(argv[3]);
     while (!markerFile.eof())
     {
         string chromString;
@@ -636,7 +636,7 @@ int main(int argc, char const ** argv)
     cout << "Finished reading marker Info, number of markers: " << length(markers) << endl; 
     
     //Create output stream
-    CharString attributeDirectory = argv[3];
+    CharString attributeDirectory = argv[2];
     append(attributeDirectory, "/attributes/");
     struct stat st;
     if(stat(toCString(attributeDirectory),&st) != 0)
@@ -688,9 +688,11 @@ int main(int argc, char const ** argv)
 
     // Read BAI index.
     BamIndex<Bai> baiIndex;
-    if (read(baiIndex, argv[2]) != 0)
+    CharString indexPath = argv[1];
+    append(indexPath,".bai");
+    if (read(baiIndex, toCString(indexPath)) != 0)
     {
-        cerr << "ERROR: Could not read BAI index file " << argv[2] << "\n";
+        cerr << "ERROR: Could not read BAI index file " << indexPath << "\n";
         return 1;
     }
     

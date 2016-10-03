@@ -725,12 +725,12 @@ void readPnSlippage(ifstream& pnSlippageFile)
         pnSlippageFile >> PnId;
         pnSlippageFile >> currPnSlipp;
         pnSlippageFile >> nMarkers;
-        if (pnSlippageFile.eof())
+        if (pnSlippageFile.eof() || PnId.length() == 0)
             break;
-        pnToSize[PnId].i1= currPnSlipp;        
+        pnToSize[PnId].i1= currPnSlipp;
         pnToSize[PnId].i2 = nMarkers; 
     }
-    cout << "Finished reading pn Slippage." << endl;
+    cout << "Finished reading pn Slippage, number of pns:" << pnToSize.size() << endl;
     pnSlippageFile.close();
 }
 
@@ -796,21 +796,35 @@ Pair<double, int> estimateSlippage(String<string> PnIds, map<Pair<string,Marker>
     return Pair<double, int>(result, nAvailable);    
 }
 
+void appendChromName(CharString& dir, CharString chromName)
+{
+    append(dir, "/");
+    append(dir, chromName);
+    append(dir, "/");
+}
+
 int main(int argc, char const ** argv)
 {   
     //Check arguments.
-    if (argc != 9 && argc != 11)
+    if (argc != 10 && argc != 12)
     {
-        cerr << "USAGE: " << argv[0] << " attDir/chromNum/ PN-slippageFile startCoordinate endCoordinate intervalIndex markerSlippageFile modelAndLabelDir/chromNum/ iterationNumber vcfOutputDirectory/ vcfFileName \n";
+        cerr << "USAGE: " << argv[0] << " attDir PN-slippageFile startCoordinate endCoordinate intervalIndex markerSlippageDir modelAndLabelDir iterationNumber chromosomeName vcfOutputDirectory vcfFileName \n";
         return 1;
     }
     
     //Parse parameters     
     int startCoord = lexicalCast<int>(argv[3]), endCoord = lexicalCast<int>(argv[4]), currItNum = lexicalCast<int>(argv[8]), prevItNum = lexicalCast<int>(argv[8]) - 1;
-    CharString attributePath = argv[1], pnSlippagePath = argv[2], intervalIndex = argv[5], markerSlippageFile = argv[6], modelAndLabelDir = argv[7], currItNumStr = argv[8], prevItNumStr = to_string(prevItNum);
-    append(pnSlippagePath, prevItNumStr);    
+    CharString attributePath = argv[1], pnSlippagePath = argv[2], intervalIndex = argv[5], markerSlippageDir = argv[6], modelAndLabelDir = argv[7], currItNumStr = argv[8], prevItNumStr = to_string(prevItNum), chromName = argv[9];
+    append(pnSlippagePath, prevItNumStr);
+    append(attributePath, "/attributes");
+    appendChromName(attributePath, chromName);
+    appendChromName(modelAndLabelDir, chromName);
+    appendChromName(markerSlippageDir, chromName);
+    CharString modelAndLabelDirBase = modelAndLabelDir;
+    CharString markerSlippageDirBase = markerSlippageDir;
+    CharString attributePathBase = attributePath;
     ifstream pnSlippageFile(toCString(pnSlippagePath));
-    ofstream markerSlippageOut; //Will use if I am estimating marker slippage, otherwise I take the file as input
+    ofstream markerSlippageOut; //Will use if I am estimating marker slippage.
     
     string PnId, chrom, motif, nextWord, refRepSeq;
     String<string> PnIds;
@@ -823,19 +837,28 @@ int main(int argc, char const ** argv)
     //If this is not the first iteration, I read the marker slippage values from the previous iteration into the markerToSizeAndModel map.
     if (currItNum > 1)
     {
-        append(markerSlippageFile, prevItNumStr);
-        cout << "Path to marker slippage file: " << markerSlippageFile << endl;
-        readMarkerSlippage(markerSlippageFile, markerToSizeAndModel, startCoord, endCoord);
-        markerSlippageFile = argv[6];
+        append(markerSlippageDir,"markerSlippage");
+        append(markerSlippageDir, prevItNumStr);
+        cout << "Path to marker slippage file: " << markerSlippageDir << endl;
+        readMarkerSlippage(markerSlippageDir, markerToSizeAndModel, startCoord, endCoord);
+        markerSlippageDir = markerSlippageDirBase;
     }
-    //Else, this is the first iteration I don't have any regression models or labels to load.
+    //Else, this is the first iteration and I don't have any regression models or labels to load.
     else
+    {
         loadModAndLab = false;
-    //Create output file for marker slippage estimates.
-    append(markerSlippageFile, currItNumStr);
-    append(markerSlippageFile, "_");
-    append(markerSlippageFile, intervalIndex);
-    markerSlippageOut.open(toCString(markerSlippageFile));
+        //Check if markerSlipps folder exist and chr folder, otherwise create them
+        struct stat st;
+        if(stat(toCString(markerSlippageDirBase),&st) != 0)
+            mkdir(toCString(markerSlippageDirBase),0777);
+        if(stat(toCString(modelAndLabelDirBase),&st) != 0)
+            mkdir(toCString(modelAndLabelDirBase),0777);
+    }
+    append(markerSlippageDir,"markerSlippage");
+    append(markerSlippageDir, currItNumStr);
+    append(markerSlippageDir, "_");
+    append(markerSlippageDir, intervalIndex);
+    markerSlippageOut.open(toCString(markerSlippageDir));
     //Read the slippage rate for all PNs into the pnToSize map.
     readPnSlippage(pnSlippageFile);
     //Map from marker to all reads covering it 
@@ -878,7 +901,7 @@ int main(int argc, char const ** argv)
                     labelFile.open(toCString(modelAndLabelDir)); 
                     if(labelFile.fail())
                         cout << "Could not open label file: " << modelAndLabelDir << endl;
-                    modelAndLabelDir = argv[7];
+                    modelAndLabelDir = modelAndLabelDirBase;
                 }          
             }
             if (numberOfWordsAndWords.i1 == 9) 
@@ -912,6 +935,7 @@ int main(int argc, char const ** argv)
                     labelFile >> second;
                     if (markerToSizeAndModel[marker].i2 == NULL || markerToSizeAndModel.count(marker) == 0)
                     {
+                        append(modelAndLabelDir, "/");
                         append(modelAndLabelDir, marker.chrom);
                         append(modelAndLabelDir, "_");
                         stringstream startStr;
@@ -921,7 +945,7 @@ int main(int argc, char const ** argv)
                         startStr.str("");
                         const char *model_in_file = toCString(modelAndLabelDir);
                         markerToSizeAndModel[marker].i2 = load_model(model_in_file);
-                        modelAndLabelDir = argv[7];
+                        modelAndLabelDir = modelAndLabelDirBase;
                     }
                 }
                 else
@@ -953,7 +977,7 @@ int main(int argc, char const ** argv)
             if (numberOfWordsAndWords.i1 != 1 && numberOfWordsAndWords.i1 != 9 && numberOfWordsAndWords.i1 != 11) 
                 cerr << "Format error in attribute file!" << endl;
         }            
-        attributePath = argv[1];
+        attributePath = attributePathBase;
         attributeFile.close();
         labelFile.close();
     }
@@ -964,8 +988,8 @@ int main(int argc, char const ** argv)
     VcfStream out;
     if (writeVcf)
     {
-        CharString outputDirectory = argv[9];
-        CharString outputFileName = argv[10];
+        CharString outputDirectory = argv[10];
+        CharString outputFileName = argv[11];
         append(outputDirectory, "/");
         append(outputDirectory, outputFileName);
         append(outputDirectory, "_");
@@ -1158,7 +1182,7 @@ int main(int argc, char const ** argv)
         const char *model_out_file = toCString(modelAndLabelDir);
         if (save_model(model_out_file,model_) != 0)
                 cout << "Unable to save model for marker number " << z << endl;
-        modelAndLabelDir = argv[7];
+        modelAndLabelDir = modelAndLabelDirBase;
         //Write vcf record for the marker I just finished.
         if (writeVcf) 
         {     
@@ -1210,7 +1234,7 @@ int main(int argc, char const ** argv)
         markerSlippageOut << thisMarker.chrom << "\t" << thisMarker.start << "\t" << thisMarker.end << "\t" << thisMarker.motif << "\t" << thisMarker.refRepeatNum << "\t" << thisMarker.refRepSeq << "\t" << setprecision(4) << fixed << markerToSizeAndModel[thisMarker].i1.i2 << "\t" << nAvailable << "\t" << markerToNallelesAndStutter[thisMarker].i1 << "\t" << markerToNallelesAndStutter[thisMarker].i2 << endl;
         cout << thisMarker.start << " totalSlipp: " << setprecision(4) << fixed << markerToSizeAndModel[thisMarker].i1.i2 << endl;
         cout << "Finished marker number: " << z << endl;
-        ++z;                 
+        ++z;
     }
     String<Pair<float> > labels;
     if (!writeVcf)
@@ -1219,8 +1243,8 @@ int main(int argc, char const ** argv)
         for (unsigned i = 0; i<length(PnIds); ++i)
         {            
             labels = pnToLabels[PnIds[i]];
-            if (length(labels) == 0)            
-                continue;             
+            if (length(labels) == 0)
+                continue;
             append(modelAndLabelDir, PnIds[i]);
             append(modelAndLabelDir, "labels");
             append(modelAndLabelDir, currItNumStr);
@@ -1231,16 +1255,16 @@ int main(int argc, char const ** argv)
                 labelsOut << labels[j].i1 << "\t" << labels[j].i2 << endl;
             /*if (currItNum > 1)
             {
-                modelAndLabelDir = argv[7];
+                modelAndLabelDir = modelAndLabelDirBase;
                 append(modelAndLabelDir, PnIds[i]);
                 append(modelAndLabelDir, "labels");
                 append(modelAndLabelDir, prevItNumStr);
                 append(modelAndLabelDir, "_");
-                append(modelAndLabelDir, intervalIndex);               
+                append(modelAndLabelDir, intervalIndex);
                 if (remove(toCString(modelAndLabelDir)) !=0)
                     cout << "Remove operation of old labelFile failed with code " << errno << endl;
             }*/
-            modelAndLabelDir = argv[7];
+            modelAndLabelDir = modelAndLabelDirBase;
             labelsOut.close();
         }
     }
