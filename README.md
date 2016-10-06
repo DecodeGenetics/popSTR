@@ -119,6 +119,7 @@ Parameters:
 * `kernelSlippageRates` - A file containing slippage rates and other info for markers in the kernel.
 * `pathToKernelModelsFiles` - Logistic regression models for all markers in the kernel should be stored at this location.
 
+
 3. Run msGenotyperDefault (this version has an argument parser so the call is a little bit different from the other).
 
 Call:
