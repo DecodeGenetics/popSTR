@@ -104,6 +104,7 @@ A kernel containing 8303 markers on chr1(HG38 coordinates) is supplied along wit
 To use the kernel one must follow the same three steps as before with a slight change:
 
 1. Run computeReadAttributes using kernelMarkersInfo as parameter number 3 (markerInfoFile) for all PNs and write output to a separate directory.
+    
     1.1 Run computeReadAttributes as described in the iterative version for all chromosomes on all PNs to be genotyped.
 
 2. Run computePnSlippageDefault for all PNs (this version has an argument parser so the call is a little bit different from the other).
