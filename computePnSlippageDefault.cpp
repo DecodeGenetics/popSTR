@@ -11,6 +11,7 @@
 #include <seqan/file.h>
 #include <seqan/modifier.h>
 #include <seqan/stream.h>
+#include <seqan/arg_parse.h>
 #include <liblinear/linear.h>
 #include <liblinear/linear.cpp>
 #include <liblinear/tron.h>
@@ -65,6 +66,12 @@ struct GenotypeInfo {
     double pValueSum;
 } ;
 
+//For storing command line arguments 
+struct ComputePnSlippageOptions
+{
+    CharString attDirChromNumPN, outputFile, markerSlippageFile, modelDirectory;
+} ;
+
 //So I can map from Markers
 bool operator<(const Marker & left, const Marker & right)
 {
@@ -85,6 +92,40 @@ map<Marker, String<AttributeLine> > markerToReads;
 
 //Store alleles at each marker
 map<Marker, Pair<std::set<float>, String<Pair<float> >> > markerToAllelesAndGenotypes;
+
+ArgumentParser::ParseResult parseCommandLine(ComputePnSlippageOptions & options, int argc, char const ** argv)
+{
+    ArgumentParser parser("computePnSlippageDefault");
+    setShortDescription(parser, "Compute individual specific slippage rate for a single individual.");
+    setVersion(parser, "1.3");
+    setDate(parser, "October 2016");
+    addUsageLine(parser, "\\fI-AF\\fP attributesDirectory/chromNum/PN-ID \\fI-OF\\fP outputFile \\fI-MS\\fP markerSlippageFile \\fI-MD\\fP modelDirectory ");
+    addDescription(parser, "This program will estimate an individual specific slipppage rate for the individual specified based on the marker slippage rates and models specified.");
+    
+    addOption(parser, ArgParseOption("AF", "attributesDirectory/chromNum/PN-ID", "Path to attributes file for the individual to estimate a slippage rate for.", ArgParseArgument::INPUTFILE, "IN-FILE"));
+    setRequired(parser, "attributesDirectory/chromNum/PN-ID");
+    
+    addOption(parser, ArgParseOption("OF", "outputFile", "The slippage rate estimated will be appended to this file.", ArgParseArgument::INPUTFILE, "OUT-FILE"));
+    setRequired(parser, "outputFile");
+    
+    addOption(parser, ArgParseOption("MS", "markerSlippageFile", "A file containing slippage rates for the microsatellites.", ArgParseArgument::OUTPUTFILE, "OUT-FILE"));
+    setRequired(parser, "markerSlippageFile");
+    
+    addOption(parser, ArgParseOption("MD", "modelDirectory", "A directory where logistic regression models for all markers in the markerSlippageFile are stored.", ArgParseArgument::OUTPUTFILE, "IN-DIR"));
+    setRequired(parser, "modelDirectory");
+	
+	ArgumentParser::ParseResult res = parse(parser, argc, argv);
+	
+	if (res != ArgumentParser::PARSE_OK)
+	    return res;
+	    
+	getOptionValue(options.attDirChromNumPN, parser, "attributesDirectory/chromNum/PN-ID");
+	getOptionValue(options.outputFile, parser, "outputFile");
+	getOptionValue(options.markerSlippageFile, parser, "markerSlippageFile");
+	getOptionValue(options.modelDirectory, parser, "modelDirectory");
+
+	return ArgumentParser::PARSE_OK;
+}
 
 //Fills in the x-part of a problem structure from an AttributeLine structure
 void fillProblemX(int idx, AttributeLine currentLine, problem& myProb)
@@ -130,6 +171,7 @@ void readMarkerSlippage(ifstream& markerSlippageFile)
         markerSlippageFile >> markerToNallelesPSumSlippAndStutt[currMarker].i1;
         markerSlippageFile >> markerToNallelesPSumSlippAndStutt[currMarker].i2[2];
     }
+    cout << "Finished reading marker slippage." << endl;
 }
 
 //Count number of words in a sentence, use to parse input from attribute file
@@ -428,26 +470,29 @@ int updateGenotypes(double current_sp)
 
 int main(int argc, char const ** argv)
 {   
-    //Check arguments.
-    if (argc != 5)
-    {
-        cerr << "USAGE: " << argv[0] << " pathToAttributeFile/PN-id outputFile markerSlippageFile modelDirectory/";
-        return 1;
-    }
-    CharString attDir = argv[1], modelDir = argv[4];
-    ifstream attributeFile(toCString(attDir)), slippageFile(argv[3]);
+    ComputePnSlippageOptions options;
+    ArgumentParser::ParseResult res = parseCommandLine(options, argc, argv);
+    if (res != seqan::ArgumentParser::PARSE_OK)
+	    return res == seqan::ArgumentParser::PARSE_ERROR;
+    
+    CharString modelDir = options.modelDirectory;
+    ifstream attributeFile(toCString(options.attDirChromNumPN)), slippageFile(toCString(options.markerSlippageFile));
     if(attributeFile.fail())
     {
-        cout << "Unable to locate attributes file." << endl;
+        cout << "Unable to locate attributes file." << options.attDirChromNumPN << endl;
         return 1;            
     }
+    if(slippageFile.fail())
+    {
+        cout << "Unable to locate slippageFile: " << options.markerSlippageFile << endl;
+        return 1;
+    }
     ofstream outputFile;
-    outputFile.open(argv[2], ios_base::app);
-    //ofstream outputFile(argv[2]);
+    outputFile.open(toCString(options.outputFile), ios_base::app);
     if(outputFile.fail())
     {
         cout << "Unable to create output file." << endl;
-        return 1;            
+        return 1;
     }
     string pnId;
     LabelProps slippCount;
@@ -478,6 +523,7 @@ int main(int argc, char const ** argv)
             second = lexicalCast<float>(numberOfWordsAndWords.i2[8]);
             if (numberOfReads >= 10)
             {
+                append(modelDir, "/");
                 append(modelDir, marker.chrom);
                 append(modelDir, "_");
                 stringstream startStr;
@@ -487,7 +533,7 @@ int main(int argc, char const ** argv)
                 startStr.str("");
                 const char *model_in_file = toCString(modelDir);
                 markerToModel[marker] = load_model(model_in_file);
-                modelDir = argv[4];
+                modelDir = options.modelDirectory;
             }
             else
                 markerToNallelesPSumSlippAndStutt[marker].i2[0] = -1.0;

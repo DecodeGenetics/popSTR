@@ -28,7 +28,7 @@ Is run per individual.
 
 Call:
 
-    `computePnSlippage attributesDirectory PN-id outputFile iterationNumber minPnsPerMarker [markerSlippageDirectory modelAndLabelDir previousSlippageRate]`
+    computePnSlippage attributesDirectory PN-id outputFile iterationNumber minPnsPerMarker markerSlippageDirectory modelAndLabelDir previousSlippageRate
     
 Parameters:
 
@@ -54,7 +54,7 @@ Is run per chromosome but for all individuals at once.
 
 Call:
 
-    `msGenotyper attDir PN-slippageFile startCoordinate endCoordinate intervalIndex markerSlippageDir modelAndLabelDir iterationNumber chromName [vcfOutputDirectory vcfFileName]`
+    msGenotyper attDir PN-slippageFile startCoordinate endCoordinate intervalIndex markerSlippageDir modelAndLabelDir iterationNumber chromName vcfOutputDirectory vcfFileName
 
 Parameters:
 
@@ -62,7 +62,7 @@ Parameters:
 * `PN-slippageFile` - Should be the outputFile parameter supplied in the computePnSlippage call. Should contain one line per individual to be genotyped.
 * `startCoordinate`/`endCoordinate` - If the user wishes to split the genotyping by intervals for paralellization purposes the start and end coordinates should be specified here. 
                       To turn this functionality off specify startCoordinate as 0 and endCoordinate>length(chromosome being genotyped)
-* `intervalIndex` - If splitting the chromosome this parameter should indicate the index of the interval specified. 
+* `intervalIndex` - If splitting the chromosome this parameter indicates the index of the interval specified. 
                     When this functionality is not desired the user can specify any number, it will be appended to names of all output files as "_intervalIndex" and must be manually
                     removed before performing subsequent iterations.
 * `markerSlippageDir` - The marker slippage rates estimated will be written to [markerSlippageDir]/[chromName]/markerSlippage[iterationNumber]_[intervalIndex] and if iterationNumber>1 the marker slippage rates
@@ -96,3 +96,44 @@ A specific vcf file will be created for each interval and when all intervals hav
 
     `grep ^# [vcfOutputDirectory]/vcfFileName_1.vcf > [vcfOutputDirectory]/vcfFileName.vcf`
     `for i in {1..[numIntervals]}; do grep -v ^# [vcfOutputDirectory]/vcfFileName_${i}.vcf >> [vcfOutputDirectory]/vcfFileName.vcf; done`
+    
+####Kernelization
+
+To circumvent the iterative part using your entire dataset it is possible to train only slippage rates for a selected set of markers (a kernel) and run the "Default" versions of `computePnSlippage` and `msGenotyper` to obtain genotypes directly.
+A kernel containing 8303 markers on chr1(HG38 coordinates) is supplied along with the software (kernelSlippageRates, kernelModels(1 file for each marker in the kernel) and kernelMarkersInfo).
+To use the kernel one must follow the same three steps as before with a slight change:
+
+1. Run computeReadAttributes using kernelMarkersInfo as parameter number 3 (markerInfoFile) for all PNs and write output to a separate directory.
+    1.1 Run computeReadAttributes as described in the iterative version for all chromosomes on all PNs to be genotyped.
+
+2. Run computePnSlippageDefault for all PNs (this version has an argument parser so the call is a little bit different from the other).
+
+Call:
+
+    `computePnSlippageDefault -AF pathToOutputFile/from/computeReadAttributes/PN-id -OF outputFile -MS kernelSlippageRates -MD pathToKernelModelsFiles`
+
+Parameters:
+
+* `pathToOutputFile/from/computeReadAttributes/PN-id` - Output file from running computeReadAttributes with markerInfoFile as parameter number 3.
+* `outputFile` - Slippage rate will be written/appended to this file. This parameter should be the same for all PNs because the PN-id and slipppage rate will be appended to the file.
+* `kernelSlippageRates` - A file containing slippage rates and other info for markers in the kernel.
+* `pathToKernelModelsFiles` - Logistic regression models for all markers in the kernel should be stored at this location.
+
+3. Run msGenotyperDefault (this version has an argument parser so the call is a little bit different from the other).
+
+Call:
+
+    `msGenotyperDefault -ADCN attributesDirectory/chromNum/ -PNS pnSlippageFile -MS markerSlippageFile -VD vcfOutputDirectory -VN vcfFileName -R start end -I intervalIndex`
+
+Parameters:
+
+* `attributesDirectory/chromNum/` - Should be a path to output files from running computeReadAttributes in the standard way followed by the name of the chromosome to be genotyped. This directory will be searched for attribute files for all PNs mentioned in the pnSlippage file.
+* `pnSlippageFile` - This file should contain the output of computePnSlippageDefault for all individuals to be genotyped.
+* `markerSlippageFile` - The slippage rates for all markers to be genotyped will be written to this file.
+* `vcfOutputDirectory` - Directory to place vcf-files containing genotypes for all individuals at all markers contained within the interval being considered.
+* `vcfFileName` - Genotypes will be written to a vcf-file vcfOutputDirectory/vcfFileName_[intervalIndex].vcf
+* `start end` - If the user wishes to split the genotyping by intervals for paralellization purposes the start and end coordinates should be specified here. 
+                      To turn this functionality off specify startCoordinate as 0 and endCoordinate>length(chromosome being genotyped)
+* `intervalIndex` - If splitting the chromosome this parameter indicates the index of the interval specified. 
+                    When this functionality is not desired the user can specify any number, it will be appended to names of all output files as "_intervalIndex" and must be manually
+                    removed before performing subsequent iterations.

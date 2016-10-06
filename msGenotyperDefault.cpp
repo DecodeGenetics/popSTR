@@ -131,11 +131,11 @@ ArgumentParser::ParseResult parseCommandLine(MsGenotyperOptions & options, int a
     setShortDescription(parser, "Microsatellite genotyper");
     setVersion(parser, "1.3");
     setDate(parser, "February 2016");
-    addUsageLine(parser, "\\fI-ADCN\\fP attributesDirectory/chromNum/ \\fI-PNS\\fP pnSlippageFile \\fI-MS\\fP markerSlippageFile \\fI-VD\\fP vcfOutputDirectory \\fI-VN\\fP vcfFileName \\fI-R\\fP start end \\fI-I\\fP intervalIndex ");
+    addUsageLine(parser, "\\fI-ADCN\\fP attributesDirectory/chromNum \\fI-PNS\\fP pnSlippageFile \\fI-MS\\fP markerSlippageFile \\fI-VD\\fP vcfOutputDirectory \\fI-VN\\fP vcfFileName \\fI-R\\fP start end \\fI-I\\fP intervalIndex ");
     addDescription(parser, "This program performs genptyping on a per chromosome basis for all PNs in the pnSlippageFile given that it can find an attribute file for the PN. The genotypes are written to a file specified by the user.");
     
-    addOption(parser, ArgParseOption("ADCN", "attributesDirectory/chromNum/", "Path to attributes file for the chromosome being genotyped.", ArgParseArgument::INPUTFILE, "IN-DIR"));
-    setRequired(parser, "attributesDirectory/chromNum/");
+    addOption(parser, ArgParseOption("ADCN", "attributesDirectory/chromNum", "Path to attributes files for the chromosome being genotyped.", ArgParseArgument::INPUTFILE, "IN-DIR"));
+    setRequired(parser, "attributesDirectory/chromNum");
     
     addOption(parser, ArgParseOption("PNS", "pnSlippageFile", "A file containing slippage rates for the pns to be genotyped.", ArgParseArgument::INPUTFILE, "IN-FILE"));
     setRequired(parser, "pnSlippageFile");
@@ -161,7 +161,7 @@ ArgumentParser::ParseResult parseCommandLine(MsGenotyperOptions & options, int a
 	if (res != ArgumentParser::PARSE_OK)
 	    return res;
 	    
-	getOptionValue(options.attDirChromNum, parser, "attributesDirectory/chromNum/");
+	getOptionValue(options.attDirChromNum, parser, "attributesDirectory/chromNum");
 	getOptionValue(options.pnSlippageFile, parser, "pnSlippageFile");
 	getOptionValue(options.markerSlippageFile, parser, "markerSlippageFile");
 	getOptionValue(options.vcfOutputDirectory, parser, "vcfOutputDirectory");
@@ -916,6 +916,7 @@ int main(int argc, char const ** argv)
     for (map<string, double>::iterator pnStart = pnToSize.begin(); pnStart != pnEnd; ++pnStart)
     {
         PnId = pnStart->first;
+        append(attributePath, "/");
         append(attributePath, PnId);
         ifstream attributeFile(toCString(attributePath));
         if (attributeFile.fail())
