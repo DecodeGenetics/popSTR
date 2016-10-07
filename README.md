@@ -1,6 +1,6 @@
 #PopSTR - A Population based microsatellite genotyper
 
-PopSTR has three steps and one must iterate between steps 2 and 3 five times: 
+PopSTR has three steps and one must iterate between steps 2 and 3 five times or use the kernel provided(see bottom of file): 
 
 ###1. computeReadAttributes - Find useable reads, estimate number of repeats in them and compute their attributes for logistic regression.
 
@@ -103,10 +103,11 @@ To circumvent the iterative part using your entire dataset it is possible to tra
 A kernel containing 8303 markers on chr1(HG38 coordinates) is supplied along with the software (kernelSlippageRates, kernelModels(1 file for each marker in the kernel) and kernelMarkersInfo).
 To use the kernel one must follow the same three steps as before with a slight change:
 
-1. Run computeReadAttributes using kernelMarkersInfo as parameter number 3 (markerInfoFile) for all PNs and write output to a separate directory.
-Then Run computeReadAttributes as described in the iterative version for all chromosomes on all PNs to be genotyped.
+#####1. Run computeReadAttributes using kernelMarkersInfo as parameter number 3 (markerInfoFile) for all PNs and write output to a separate directory. 
 
-2. Run computePnSlippageDefault for all PNs (this version has an argument parser so the call is a little bit different from the other).
+#####2. Run computeReadAttributes as described in the iterative version for all chromosomes on all PNs to be genotyped.
+
+#####3. Run computePnSlippageDefault for all PNs (this version has an argument parser so the call is different).
 
 Call:
 
@@ -119,8 +120,7 @@ Parameters:
 * `kernelSlippageRates` - A file containing slippage rates and other info for markers in the kernel.
 * `pathToKernelModelsFiles` - Logistic regression models for all markers in the kernel should be stored at this location.
 
-
-3. Run msGenotyperDefault (this version has an argument parser so the call is a little bit different from the other).
+#####4. Run msGenotyperDefault (this version has an argument parser so the call is different).
 
 Call:
 
