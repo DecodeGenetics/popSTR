@@ -3,9 +3,10 @@
 
 # include SeqAn libraries
 #-include ../stat/libraries/Makefile.inc
-CXXFLAGS+=-I/nfs/prog/bioinfo/apps-x86_64/seqan-library/1.4.1/include
-CXXFLAGS+=-I/odinn/users/snaedisk
-
+#CXXFLAGS+=-I/nfs/prog/bioinfo/apps-x86_64/seqan-library/1.4.1/include
+#CXXFLAGS+=-I/odinn/users/snaedisk
+CXXFLAGS+=-I.
+CXXFLAGS+=-I./seqan-library-1.4.1/include
 
 
 # RELEASE build
