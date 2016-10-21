@@ -1,5 +1,21 @@
 #PopSTR - A Population based microsatellite genotyper
 
+##Downloading and Installing popSTR
+
+1.Download zip of source code: https://github.com/DecodeGenetics/popSTR/archive/master.zip
+
+2.Unzip source code: `unzip popSTR-master.zip`
+
+3.Move to source code directory: `cd popSTR-master/`
+
+4.Unzip library dependencies: `unzip -qq seqan-library-1.4.1.zip` 
+                              
+                             unzip -qq liblinear-2.01.zip
+
+5.Run make command: `make`
+
+##Running popSTR
+
 PopSTR has three steps and one must iterate between steps 2 and 3 five times or use the kernel provided(see bottom of file): 
 
 ###1. computeReadAttributes - Find useable reads, estimate number of repeats in them and compute their attributes for logistic regression.
