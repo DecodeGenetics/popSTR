@@ -35,7 +35,7 @@ Parameters:
         chrom startCoordinate endCoordinate repeatMotif numOfRepeatsInRef 1000refBasesBeforeStart 1000refBasesAfterEnd repeatSeqFromRef
 
 * `minFlankLength` - Minimum number of flanking bases required on each side of a repeat for a read to be considered useful.
-* `maxRepeatLength` - All alleles with a basePair length above this number will be lumped together into a greater than allele.
+* `maxRepeatLength` - All alleles with a basePair length above this number will be lumped together into a greater than allele. Should be set close to 0.5 * readLength in IN.bam.
 * `PN-id` - The id of the individual being genotyped.
 
 ###2. computePnSlippage - Estimate individual specific slippage rates
@@ -131,7 +131,7 @@ Call:
 
 Parameters:
 
-* `pathToOutputFile/from/computeReadAttributes/PN-id` - Output file from running computeReadAttributes with markerInfoFile as parameter number 3.
+* `pathToOutputFile/from/computeReadAttributes/PN-id` - Output file from running computeReadAttributes with kernelMarkersInfo from the kernel as parameter number 3.
 * `outputFile` - Slippage rate will be written/appended to this file. This parameter should be the same for all PNs because the PN-id and slipppage rate will be appended to the file.
 * `kernelSlippageRates` - A file containing slippage rates and other info for markers in the kernel.
 * `pathToKernelModelsFiles` - Logistic regression models for all markers in the kernel should be stored at this location.
