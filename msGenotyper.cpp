@@ -452,7 +452,7 @@ void makeVcfHeader(VcfStream& out, String<string> PnIds, string chrom)
     for (unsigned i = 0; i<length(PnIds); ++i)
         appendValue(out.header.sampleNames, PnIds[i]);
     unsigned chromLength = getChrLength(chrom);
-    string contigString = "<ID=" + chrom + ", length=" + to_string(chromLength) + ">";
+    string contigString = "<ID=" + chrom + ", length=" + to_string((long long unsigned int)chromLength) + ">";
     //Complicated way of getting todays date
     time_t rawtime;
     tm* timeinfo;
@@ -814,7 +814,7 @@ int main(int argc, char const ** argv)
     
     //Parse parameters     
     int startCoord = lexicalCast<int>(argv[3]), endCoord = lexicalCast<int>(argv[4]), currItNum = lexicalCast<int>(argv[8]), prevItNum = lexicalCast<int>(argv[8]) - 1;
-    CharString attributePath = argv[1], pnSlippagePath = argv[2], intervalIndex = argv[5], markerSlippageDir = argv[6], modelAndLabelDir = argv[7], currItNumStr = argv[8], prevItNumStr = to_string(prevItNum), chromName = argv[9];
+    CharString attributePath = argv[1], pnSlippagePath = argv[2], intervalIndex = argv[5], markerSlippageDir = argv[6], modelAndLabelDir = argv[7], currItNumStr = argv[8], prevItNumStr = to_string((long long int)prevItNum), chromName = argv[9];
     append(pnSlippagePath, prevItNumStr);
     append(attributePath, "/attributes");
     appendChromName(attributePath, chromName);
