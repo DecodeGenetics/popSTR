@@ -633,13 +633,24 @@ int main(int argc, char const ** argv)
         if (currInfo.STRend - currInfo.STRstart < 151 - 2*minFlank)
             appendValue(markers, currInfo);
     }
+    if (length(markers)==0)
+    {
+        cerr << "The markerInfo file is empty, please supply a file containing at least one marker." << endl;
+        return 1;
+    }
     cout << "Finished reading marker Info, number of markers: " << length(markers) << endl; 
     
     //Create output stream
     CharString attributeDirectory = argv[2];
+    struct stat st2;
+    if (stat(toCString(attributeDirectory),&st2) != 0)
+    {
+        cerr << "Output directory does not exist: " << attributeDirectory << endl;
+        return 1;
+    }
     append(attributeDirectory, "/attributes/");
     struct stat st;
-    if(stat(toCString(attributeDirectory),&st) != 0)
+    if (stat(toCString(attributeDirectory),&st) != 0)
         mkdir(toCString(attributeDirectory),0777);
     if (length(currInfo.chrom) > 2)    
         append(attributeDirectory, currInfo.chrom);
