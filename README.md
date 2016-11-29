@@ -42,21 +42,23 @@ The resulting attribute-file has the following format:
 The first line contains the PN-id and is followed by one or more pairs of one Markerline and one or more Attributelines
 
 Markerline (one per each marker):
-chrom startCoordinate endCoordinate repeatMotif numOfRepeatsInRef numOfReadsFound repeatSeqFromRef A1-initialization A2-initialization
+
+chrom startCoordinate endCoordinate repeatMotif numOfRepeatsInRef numOfReadsFound repeatSeqFromRef  A1-initialization A2-initialization
 
 Attributelines (Number of lines is determined by numOfReadsFound from the Markerline):
-numOfRepeatsInRead alignmentQualBefore alignmentQualAfter locationShift mateEditDist repeatPurity ratioOver20inRepeat ratioOver20AfterRepeat sequenceLength wasUnaligned repeatSeqFromRead 
 
-numOfRepeatsInRead - The allele reported by the read, tells us how many repeats were found in the read.
-alignmentQualBefore - Quality of realignment on left side of repeat. Ranges from 0 to 1 and higher values indicate more reliable reads
-alignmentQualAfter - Quality of realignment on right side of repeat. Ranges from 0 to 1 and higher values indicate more reliable reads
-locationShift - Measures changes from original alignment during the realignment of flanking sequences, common values lie between 0 and 4.
-mateEditDist - Edit distance of aligned base pairs of the mate sequence to the reference, higher values of this attribute are suspicious.
-repeatPurity - Measures how well the repeat sequence from the read matches the repeat sequence from the reference. Ranges from 0 to 1 and higher values indicate more reliable reads
-ratioOver20inRepeat - Measures the ratio of bases in the repeat sequence with high quality scores. Ranges from 0 to 1 and higher values indicate more reliable reads
-ratioOver20inRepeat - Measures the ratio of bases in the right flanking sequence with high quality scores. Ranges from 0 to 1 and higher values indicate more reliable reads
-sequenceLength - Total length of read sequence, reads shorter than what is normal indicate less reliable reads.
-wasUnaligned - Boolean value indicating if the read was unaligned, unaligned reads are rarely processed and should be checked if causing conflict.
+numOfRepeatsInRead  alignmentQualBefore alignmentQualAfter  locationShift mateEditDist  repeatPurity  ratioOver20inRepeat ratioOver20AfterRepeat  sequenceLength  wasUnaligned  repeatSeqFromRead 
+
+* numOfRepeatsInRead - The allele reported by the read, tells us how many repeats were found in the read.
+* alignmentQualBefore - Quality of realignment on left side of repeat. Ranges from 0 to 1 and higher values indicate more reliable reads
+* alignmentQualAfter - Quality of realignment on right side of repeat. Ranges from 0 to 1 and higher values indicate more reliable reads
+* locationShift - Measures changes from original alignment during the realignment of flanking sequences, common values lie between 0 and 4.
+* mateEditDist - Edit distance of aligned base pairs of the mate sequence to the reference, higher values of this attribute are suspicious.
+* repeatPurity - Measures how well the repeat sequence from the read matches the repeat sequence from the reference. Ranges from 0 to 1 and higher values indicate more reliable reads
+* ratioOver20inRepeat - Measures the ratio of bases in the repeat sequence with high quality scores. Ranges from 0 to 1 and higher values indicate more reliable reads
+* ratioOver20inRepeat - Measures the ratio of bases in the right flanking sequence with high quality scores. Ranges from 0 to 1 and higher values indicate more reliable reads
+* sequenceLength - Total length of read sequence, reads shorter than what is normal indicate less reliable reads.
+* wasUnaligned - Boolean value indicating if the read was unaligned, unaligned reads are rarely processed and should be checked if causing conflict.
 
 
 ###2. computePnSlippage - Estimate individual specific slippage rates
