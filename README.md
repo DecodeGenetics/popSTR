@@ -38,8 +38,10 @@ Parameters:
 * `maxRepeatLength` - All alleles with a basePair length above this number will be lumped together into a greater than allele. Should be set close to 0.5 * readLength in IN.bam.
 * `PN-id` - The id of the individual being genotyped.
 
+##Output:
 The resulting attribute-file has the following format:
-The first line contains the PN-id and is followed by one or more pairs of one Markerline and one or more Attributelines
+
+The first line contains the PN-id and is followed by one or more pairs of a Markerline and one or more Attributelines
 
 Markerline (one per each marker):
 
