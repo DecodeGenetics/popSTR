@@ -392,8 +392,8 @@ int main(int argc, char const ** argv)
                     labels >> second;
                     if (numberOfReads >= 10 && markerToNpns[marker] >= minNpns)
                     {
-                        append(modelDir, "/");
-                        append(modelDir, marker.chrom);
+                        append(modelDir, "/chr");
+                        append(modelDir,chrId);
                         append(modelDir, "/");
                         append(modelDir, marker.chrom);
                         append(modelDir, "_");
