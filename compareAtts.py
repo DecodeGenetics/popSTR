@@ -30,7 +30,7 @@ with open(old_attribute_file, 'r') as old_atts_file:
             chrom,begin,end,motif,refrep,nreads,refseq = line.split()[0:7]
             for i in range(0, int(nreads)):
                 l = old_atts_file.readline()
-                posToAlleles[begin].add(l.split()[0])                
+                posToAlleles[begin].add(l.split()[0])
             line = old_atts_file.readline()
         else:
             print 'Something is wrong!'
@@ -46,9 +46,9 @@ with open(new_attribute_file, 'r') as new_atts_file:
             nNewMarkers += 1
             chrom,begin,end,motif,refrep,nreads,refseq,a1,a2 = line.split()
             superAllele = False 
-            if begin in posToAlleles: 
+            if begin in posToAlleles:
                 nCompMarkers += 1
-                oldAlleleSet = posToAlleles[begin]                  
+                oldAlleleSet = posToAlleles[begin]
                 for i in range(0, int(nreads)):
                     l = new_atts_file.readline()
                     allele = l.split()[0]
@@ -58,7 +58,7 @@ with open(new_attribute_file, 'r') as new_atts_file:
                     if len(l.split()[10])>=70:
                         superAllele = True
                 if superAllele:
-                    nSuperAlleles +=1                                             
+                    nSuperAlleles +=1
                 if int(nreads) > len(posToAlleles[begin]):
                     nMoreReads += 1
                     #if len(newAlleleSet.difference(oldAlleleSet))>0:

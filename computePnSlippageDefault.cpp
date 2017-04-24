@@ -42,19 +42,19 @@ struct Marker {
 } ;
 
 struct AttributeLine {
-    float ratioBf; 
-    float ratioAf; 
+    float ratioBf;
+    float ratioAf;
     float numOfRepeats;
-    unsigned locationShift; 
+    unsigned locationShift;
     unsigned mateEditDist;
-    float purity; 
+    float purity;
     float ratioOver20In;
     float ratioOver20After;
     unsigned sequenceLength;
     bool wasUnaligned;
     int label;
     double pValue;
-} ; 
+} ;
 
 struct GenotypeInfo {
     String<Pair<float> > genotypes;
@@ -66,7 +66,7 @@ struct GenotypeInfo {
     double pValueSum;
 } ;
 
-//For storing command line arguments 
+//For storing command line arguments
 struct ComputePnSlippageOptions
 {
     CharString attDirChromNumPN, outputFile, markerSlippageFile, modelDirectory;
@@ -87,7 +87,7 @@ map<Marker, model*> markerToModel;
 //Stores number of pns used in estimating marker slippage for each marker
 map<Marker, int> markerToNpns;
 
-//Store AttributeLine for all reads 
+//Store AttributeLine for all reads
 map<Marker, String<AttributeLine> > markerToReads;
 
 //Store alleles at each marker
@@ -101,16 +101,16 @@ ArgumentParser::ParseResult parseCommandLine(ComputePnSlippageOptions & options,
     setDate(parser, "October 2016");
     addUsageLine(parser, "\\fI-AF\\fP attributesDirectory/chromNum/PN-ID \\fI-OF\\fP outputFile \\fI-MS\\fP markerSlippageFile \\fI-MD\\fP modelDirectory ");
     addDescription(parser, "This program will estimate an individual specific slipppage rate for the individual specified based on the marker slippage rates and models specified.");
-    
+
     addOption(parser, ArgParseOption("AF", "attributesDirectory/chromNum/PN-ID", "Path to attributes file for the individual to estimate a slippage rate for.", ArgParseArgument::INPUTFILE, "IN-FILE"));
     setRequired(parser, "attributesDirectory/chromNum/PN-ID");
-    
+
     addOption(parser, ArgParseOption("OF", "outputFile", "The slippage rate estimated will be appended to this file.", ArgParseArgument::INPUTFILE, "OUT-FILE"));
     setRequired(parser, "outputFile");
-    
+
     addOption(parser, ArgParseOption("MS", "markerSlippageFile", "A file containing slippage rates for the microsatellites.", ArgParseArgument::OUTPUTFILE, "OUT-FILE"));
     setRequired(parser, "markerSlippageFile");
-    
+
     addOption(parser, ArgParseOption("MD", "modelDirectory", "A directory where logistic regression models for all markers in the markerSlippageFile are stored.", ArgParseArgument::OUTPUTFILE, "IN-DIR"));
     setRequired(parser, "modelDirectory");
 	
@@ -118,7 +118,7 @@ ArgumentParser::ParseResult parseCommandLine(ComputePnSlippageOptions & options,
 	
 	if (res != ArgumentParser::PARSE_OK)
 	    return res;
-	    
+	
 	getOptionValue(options.attDirChromNumPN, parser, "attributesDirectory/chromNum/PN-ID");
 	getOptionValue(options.outputFile, parser, "outputFile");
 	getOptionValue(options.markerSlippageFile, parser, "markerSlippageFile");
@@ -130,7 +130,7 @@ ArgumentParser::ParseResult parseCommandLine(ComputePnSlippageOptions & options,
 //Fills in the x-part of a problem structure from an AttributeLine structure
 void fillProblemX(int idx, AttributeLine currentLine, problem& myProb)
 {
-    myProb.x[idx][0].index = 1;                              
+    myProb.x[idx][0].index = 1;
     myProb.x[idx][0].value = currentLine.ratioBf;
     myProb.x[idx][1].index = 2;
     myProb.x[idx][1].value = currentLine.ratioAf;
@@ -149,13 +149,13 @@ void fillProblemX(int idx, AttributeLine currentLine, problem& myProb)
     myProb.x[idx][8].index = 9;
     myProb.x[idx][8].value = currentLine.wasUnaligned;
     myProb.x[idx][9].index = -1; // This is to indicate that there aren't any more attributes to read in.
-    myProb.x[idx][9].value = 0;    
+    myProb.x[idx][9].value = 0;
 }
 
 void readMarkerSlippage(ifstream& markerSlippageFile)
 {
     Marker currMarker;
-    string tempVal;        
+    string tempVal;
     while (!markerSlippageFile.eof())
     {
         markerSlippageFile >> currMarker.chrom;
@@ -175,31 +175,32 @@ void readMarkerSlippage(ifstream& markerSlippageFile)
 }
 
 //Count number of words in a sentence, use to parse input from attribute file
-Pair<int, String<string> > countNumberOfWords(string sentence){
+Pair<int, String<string> > countNumberOfWords(string sentence)
+{
     int numberOfWords = 0;
     String<string> words;
     resize(words, 11);
-    
-    if (!isspace(sentence[0])) 
+
+    if (!isspace(sentence[0]))
     {
         numberOfWords++;
         words[0] = sentence[0];
     }
 
-    for (unsigned i = 1; i < sentence.length(); i++) 
+    for (unsigned i = 1; i < sentence.length(); i++)
     {
-        if ((!isspace(sentence[i])) && (isspace(sentence[i-1]))) 
+        if ((!isspace(sentence[i])) && (isspace(sentence[i-1])))
         {
             numberOfWords++;
             words[numberOfWords-1] = sentence[i];
         }
         else
         {
-            if (!isspace(sentence[i]))            
-                words[numberOfWords-1].push_back(sentence[i]);            
+            if (!isspace(sentence[i]))
+                words[numberOfWords-1].push_back(sentence[i]);
         }
     }
-    
+
     resize(words, numberOfWords);
     return Pair<int, String<string> >(numberOfWords, words);
 }
@@ -220,11 +221,11 @@ double getPval(Marker marker, AttributeLine currentLine)
     return prob_estimates[0];
 }
 
-//Parses one line from attribute file by filling up and returning an AttributeLine, also initializes markerToSizeAndModel map using the labels 
+//Parses one line from attribute file by filling up and returning an AttributeLine, also initializes markerToSizeAndModel map using the labels
 AttributeLine parseNextLine(float winner, float second, ifstream& attributeFile, Marker& marker, String<string> firstLine, bool useFirstLine, LabelProps& slippCount)
 {
     AttributeLine currentLine;
-    string temp;    
+    string temp;
     if (useFirstLine)
     {
         currentLine.numOfRepeats = lexicalCast<float>(firstLine[0]);
@@ -236,7 +237,8 @@ AttributeLine parseNextLine(float winner, float second, ifstream& attributeFile,
         currentLine.ratioOver20In = lexicalCast<float>(firstLine[6]);
         currentLine.ratioOver20After = lexicalCast<float>(firstLine[7]);
         currentLine.sequenceLength = lexicalCast<unsigned int>(firstLine[8]);
-        currentLine.wasUnaligned = lexicalCast<bool>(firstLine[9]);       
+        currentLine.wasUnaligned = lexicalCast<bool>(firstLine[9]);
+        markerToNallelesPSumSlippAndStutt[marker].i2[0] = 0; //Have to set this sum to 0 before I start adding to it.
     }
     else
     {
@@ -259,15 +261,15 @@ AttributeLine parseNextLine(float winner, float second, ifstream& attributeFile,
         slippCount.p1 += currentLine.pValue;
         currentLine.label = 1;
     }
-    else 
+    else
     {
         float diff1 = fabs(currentLine.numOfRepeats - winner), diff2 = fabs(currentLine.numOfRepeats - second);
-        if (std::min(diff1,diff2)>=0.9)
+        if (std::min(diff1,diff2)>=0.9) //full motif slippage
         {
             slippCount.p2 += currentLine.pValue;
             currentLine.label = 2;
         }
-        else
+        else //stutter
         {
             slippCount.p3 += currentLine.pValue;
             currentLine.label = 3;
@@ -281,10 +283,10 @@ double estimateSlippage(double current_sp)
     vector<double> weights;
     vector<double> slippFragments;
     double currMarkSlipp, currPvalSum, weightSum = 0, fullMotifSlippageSum = 0;
-    map<Marker, Pair<int, String<double> > >::const_iterator markerEnd =  markerToNallelesPSumSlippAndStutt.end(); 
+    map<Marker, Pair<int, String<double> > >::const_iterator markerEnd =  markerToNallelesPSumSlippAndStutt.end();
     for (map<Marker, Pair<int, String<double> > >::iterator markerStart =  markerToNallelesPSumSlippAndStutt.begin(); markerStart != markerEnd; ++markerStart)
-    {            
-        if ( markerStart->second.i2[0] == -1.0)        
+    {
+        if ( markerStart->second.i2[0] == -1.0)
             continue;
         if (markerStart->second.i2[1] == 0)
             currMarkSlipp = 0.001;
@@ -319,14 +321,14 @@ String<Pair<float> > makeGenotypes(std::set<float>& alleles)
     String<float> alleleString;
     std::set<float>::reverse_iterator allelesBegin = alleles.rend();
     for (std::set<float>::reverse_iterator alleleIt = alleles.rbegin(); alleleIt!=allelesBegin; ++alleleIt)
-        appendValue(alleleString, *alleleIt);  
+        appendValue(alleleString, *alleleIt);
     for (unsigned i=0; i<length(alleleString); ++i)
     {
         appendValue(genotypes,Pair<float>(alleleString[i],alleleString[i]));
         if (i == (length(alleleString)-1))
             break;
         for (unsigned j=i+1; j<length(alleleString); ++j)
-            appendValue(genotypes,Pair<float>(alleleString[j],alleleString[i])); 
+            appendValue(genotypes,Pair<float>(alleleString[j],alleleString[i]));
     }
     reverse(genotypes);
     return genotypes;
@@ -347,12 +349,12 @@ int findMaxIndex(String<long double>& probs)
     return maxIndex;
 }
 
-float dgeom(int diff, double psucc) 
+float dgeom(int diff, double psucc)
 {
-    if (diff < 0) 
+    if (diff < 0)
         return 0;
     double p = psucc;
-    for (int i = 0; i < diff; i++) 
+    for (int i = 0; i < diff; i++)
     {
         p = p*(1-psucc);
     }
@@ -360,14 +362,14 @@ float dgeom(int diff, double psucc)
 }
 
 float dpois(int step, float mean) {
-  if (step < 0) 
+  if (step < 0)
     return 0;
   float p = exp(-1*mean);
   for (int i = 0; i < step; i++) {
     p = p*mean;
     p = p/(i+1);
   }
-  return p;  
+  return p;
 }
 
 void relabelReads(std::set<float>& newGenotype, String<AttributeLine>& reads)
@@ -400,7 +402,7 @@ bool determineGenotype(String<AttributeLine>& reads, double s_ij, String<Pair<fl
     resize(probs, length(genotypes));
     bool isHomo;
     float posNegSlipp = 1, posNegSlipp2 = 1, lambda = std::max((double)0.001,s_ij), diff, diff2;
-    int indexOfWinner;    
+    int indexOfWinner;
     for (unsigned i=0; i<length(genotypes); ++i)
     {
         probs[i] = 1;
@@ -416,11 +418,11 @@ bool determineGenotype(String<AttributeLine>& reads, double s_ij, String<Pair<fl
             if (isHomo)
             {
                 if (readToCheck.numOfRepeats < genotypeToCheck.i1)
-                    posNegSlipp = 0.85;
+                    posNegSlipp = 0.80;
                 if (readToCheck.numOfRepeats > genotypeToCheck.i1)
-                    posNegSlipp = 0.15;
+                    posNegSlipp = 0.2;
                 diff = fabs(readToCheck.numOfRepeats - genotypeToCheck.i1);
-                probs[i] *= (readToCheck.pValue * dgeom(static_cast<int>((diff-(float)floor(diff))*motifLength), psucc) * dpois(floor(diff), lambda) * posNegSlipp + ((double)(1.0-readToCheck.pValue)/(double)numberOfAlleles));                
+                probs[i] *= (readToCheck.pValue * dgeom(static_cast<int>(roundf((diff-(float)floor(diff))*motifLength)), psucc) * dpois(floor(diff), lambda) * posNegSlipp + ((double)(1.0-readToCheck.pValue)/(double)numberOfAlleles));
             }
             else
             {
@@ -434,10 +436,10 @@ bool determineGenotype(String<AttributeLine>& reads, double s_ij, String<Pair<fl
                     posNegSlipp2 = 0.2;
                 diff = fabs(readToCheck.numOfRepeats - genotypeToCheck.i1);
                 diff2 = fabs(readToCheck.numOfRepeats - genotypeToCheck.i2);
-                probs[i] *= (readToCheck.pValue * 0.5 * (dgeom(static_cast<int>((diff-(float)floor(diff))*motifLength), psucc) * dpois(floor(diff), lambda) * posNegSlipp + dgeom(static_cast<int>((diff2-(float)floor(diff2))*motifLength), psucc) * dpois(floor(diff2), lambda) * posNegSlipp2) + ((double)(1.0-readToCheck.pValue)/(double)numberOfAlleles));
+                probs[i] *= (readToCheck.pValue * 0.5 * (dgeom(static_cast<int>(roundf((diff-(float)floor(diff))*motifLength)), psucc) * dpois(floor(diff), lambda) * posNegSlipp + dgeom(static_cast<int>(roundf((diff2-(float)floor(diff2))*motifLength)), psucc) * dpois(floor(diff2), lambda) * posNegSlipp2) + ((double)(1.0-readToCheck.pValue)/(double)numberOfAlleles));
             }
         }
-    } 
+    }
     indexOfWinner = findMaxIndex(probs);
     newGenotype.insert(genotypes[indexOfWinner].i1);
     newGenotype.insert(genotypes[indexOfWinner].i2);
@@ -455,7 +457,7 @@ int updateGenotypes(double current_sp)
     int nChanged = 0;
     bool changed;
     String<Pair<float> > genotypes;
-    map<Marker, Pair<int, String<double> > >::const_iterator markerEnd =  markerToNallelesPSumSlippAndStutt.end(); 
+    map<Marker, Pair<int, String<double> > >::const_iterator markerEnd =  markerToNallelesPSumSlippAndStutt.end();
     for (map<Marker, Pair<int, String<double> > >::iterator markerStart =  markerToNallelesPSumSlippAndStutt.begin(); markerStart != markerEnd; ++markerStart)
     {
         if ( markerStart->second.i2[0] == -1.0)
@@ -469,18 +471,18 @@ int updateGenotypes(double current_sp)
 }
 
 int main(int argc, char const ** argv)
-{   
+{
     ComputePnSlippageOptions options;
     ArgumentParser::ParseResult res = parseCommandLine(options, argc, argv);
     if (res != seqan::ArgumentParser::PARSE_OK)
 	    return res == seqan::ArgumentParser::PARSE_ERROR;
-    
+
     CharString modelDir = options.modelDirectory;
     ifstream attributeFile(toCString(options.attDirChromNumPN)), slippageFile(toCString(options.markerSlippageFile));
     if(attributeFile.fail())
     {
         cout << "Unable to locate attributes file." << options.attDirChromNumPN << endl;
-        return 1;            
+        return 1;
     }
     if(slippageFile.fail())
     {
@@ -498,22 +500,22 @@ int main(int argc, char const ** argv)
     LabelProps slippCount;
     slippCount.p1 = 0;
     slippCount.p2 = 0;
-    slippCount.p3 = 0; 
+    slippCount.p3 = 0;
     string nextLine;
     Marker marker;
     int numberOfReads, nMarkers = 0, nChanged = 0;
     float winner, second;
-    Pair<int, String<string> > numberOfWordsAndWords;            
+    Pair<int, String<string> > numberOfWordsAndWords;
     attributeFile >> pnId;
     readMarkerSlippage(slippageFile);
     AttributeLine currentLine;
     while (!attributeFile.eof())
-    {        
+    {
         getline (attributeFile,nextLine);
-        if (nextLine.length() == 0) 
+        if (nextLine.length() == 0)
             continue;
         numberOfWordsAndWords = countNumberOfWords(nextLine);
-        if (numberOfWordsAndWords.i1 == 9) 
+        if (numberOfWordsAndWords.i1 == 9)
         {
             marker.chrom = numberOfWordsAndWords.i2[0];
             marker.start = lexicalCast<int>(numberOfWordsAndWords.i2[1]);
@@ -547,19 +549,19 @@ int main(int argc, char const ** argv)
                 {
                     if (i == 0)
                         currentLine = parseNextLine(winner, second, attributeFile, marker, numberOfWordsAndWords.i2, true, slippCount);
-                    else 
+                    else
                         currentLine = parseNextLine(winner, second, attributeFile, marker, numberOfWordsAndWords.i2, false, slippCount);
                     appendValue(markerToReads[marker],currentLine);
                     markerToAllelesAndGenotypes[marker].i1.insert(currentLine.numOfRepeats);
                 }
-                markerToAllelesAndGenotypes[marker].i2 = makeGenotypes(markerToAllelesAndGenotypes[marker].i1);                
+                markerToAllelesAndGenotypes[marker].i2 = makeGenotypes(markerToAllelesAndGenotypes[marker].i1);
             }
-            else 
+            else
             {
                 for (unsigned i = 0; i < numberOfReads-1; ++i)
                     getline (attributeFile,nextLine);
             }
-        }                
+        }
         if (numberOfWordsAndWords.i1 != 9 && numberOfWordsAndWords.i1 != 11)
             cerr << "Format error in attribute file!" << endl;
     }
@@ -573,7 +575,7 @@ int main(int argc, char const ** argv)
         outputFile << pnId << "\t" << current_sp << endl;
         return 0;
     }
-    double changed = 1;    
+    double changed = 1;
     while (changed > 0.005)
     {
         current_sp = estimateSlippage(current_sp);
@@ -582,8 +584,8 @@ int main(int argc, char const ** argv)
         cout << "Updated genotypes." << endl;
         changed = (float)nChanged/(float)nMarkers;
         cout << nChanged << " " << nMarkers << endl;
-    }      
+    }
     cout << "Number of markers available for estimating pnSlippage for " << pnId << " is: " << nMarkers << endl;
-    outputFile << pnId << "\t" << current_sp << endl;    
-    return 0;    
+    outputFile << pnId << "\t" << current_sp << endl;
+    return 0;
 }

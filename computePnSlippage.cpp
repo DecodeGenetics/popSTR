@@ -69,7 +69,7 @@ map<Marker, model*> markerToModel;
 map<Marker, int> markerToNpns;
 
 //Fills in the x-part of a problem structure from an AttributeLine structure
-void fillProblemX(int idx, AttributeLine currentLine, problem& myProb)
+void fillProblemX(int idx, AttributeLine& currentLine, problem& myProb)
 {
     myProb.x[idx][0].index = 1;
     myProb.x[idx][0].value = currentLine.ratioBf;
@@ -98,7 +98,6 @@ void appendChrAndPnId(CharString& dir, string chromNum, string pnId)
     append(dir,"/attributes/chr");
     append(dir,chromNum);
     append(dir,"/");
-    //append(dir,"highCovFiltered/");
     append(dir,pnId);
 }
 
@@ -174,16 +173,17 @@ void readMarkerSlippage(CharString markerSlippDir, int chromNum, string itNumStr
         markerSlippageFile >> tempVal;
         markerSlippageFile >> tempVal;
         resize(markerToNallelesPSumSlippAndStutt[currMarker].i2,4);
-        markerToNallelesPSumSlippAndStutt[currMarker].i2[0] = -1.0;
-        markerSlippageFile >> markerToNallelesPSumSlippAndStutt[currMarker].i2[1];
-        markerSlippageFile >> markerToNpns[currMarker];
-        markerSlippageFile >> markerToNallelesPSumSlippAndStutt[currMarker].i1;
-        markerSlippageFile >> markerToNallelesPSumSlippAndStutt[currMarker].i2[2];
+        markerToNallelesPSumSlippAndStutt[currMarker].i2[0] = -1.0; //set pSum to -1 initially
+        markerSlippageFile >> markerToNallelesPSumSlippAndStutt[currMarker].i2[1]; //marker slippage rate
+        markerSlippageFile >> markerToNpns[currMarker]; //how many pns available to estimate the marker slippage
+        markerSlippageFile >> markerToNallelesPSumSlippAndStutt[currMarker].i1; //read number of alleles
+        markerSlippageFile >> markerToNallelesPSumSlippAndStutt[currMarker].i2[2]; //marker stutter rate
     }
+    cout << "Finished reading marker slippage for chr" << chromNum << "\n";
 }
 
 //Count number of words in a sentence, use to parse input from attribute file
-Pair<int, String<string> > countNumberOfWords(string sentence){
+Pair<int, String<string> > countNumberOfWords(string& sentence){
     int numberOfWords = 0;
     String<string> words;
     resize(words, 11);
@@ -213,7 +213,7 @@ Pair<int, String<string> > countNumberOfWords(string sentence){
     return Pair<int, String<string> >(numberOfWords, words);
 }
 
-double getPval(Marker marker, AttributeLine currentLine)
+double getPval(Marker& marker, AttributeLine& currentLine)
 {
     double predict_label;
     model* model_ = markerToModel[marker];
@@ -230,7 +230,7 @@ double getPval(Marker marker, AttributeLine currentLine)
 }
 
 //Parses one line from attribute file by filling up and returning an AttributeLine, also initializes markerToSizeAndModel map using the labels
-void parseNextLine(float winner, float second, ifstream& attributeFile, Marker& marker, String<string> firstLine, bool useFirstLine, LabelProps& slippCount)
+void parseNextLine(float winner, float second, ifstream& attributeFile, Marker& marker, String<string>& firstLine, bool useFirstLine, LabelProps& slippCount)
 {
     AttributeLine currentLine;
     string temp;
@@ -246,6 +246,7 @@ void parseNextLine(float winner, float second, ifstream& attributeFile, Marker& 
         currentLine.ratioOver20After = lexicalCast<float>(firstLine[7]);
         currentLine.sequenceLength = lexicalCast<unsigned int>(firstLine[8]);
         currentLine.wasUnaligned = lexicalCast<bool>(firstLine[9]);
+        markerToNallelesPSumSlippAndStutt[marker].i2[0] = 0; //Have to set this sum to 0 before I start adding to it.
     }
     else
     {
@@ -375,7 +376,7 @@ int main(int argc, char const ** argv)
                 continue;
             }
             readMarkerSlippage(slippDir, i, itNumStr);
-            //cout << "Starting chromosome: " << chrId << endl;
+            cout << "Starting chromosome: " << chrId << endl;
             while (!attributeFile.eof())
             {
                 getline (attributeFile,nextLine);
@@ -436,7 +437,7 @@ int main(int argc, char const ** argv)
         else
             readData(attributeFile, slippCount);
         attributeFile.close();
-        //cout << "Finished chromosome: " << chrId << endl;
+        cout << "Finished chromosome: " << chrId << endl;
         markerToModel.clear();
     }
     if (haveMarkSlipp)

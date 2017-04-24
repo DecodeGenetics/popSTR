@@ -10,7 +10,7 @@ int main(int argc, char const ** argv)
 {
     if (argc != 4)
     {
-        std::cerr << "USAGE: refGenome.fa markerFile outputDirectory\n";
+        std::cerr << "USAGE: " << argv[0] << " refGenome.fa markerFile outputDirectory\n";
         return 1;
     }
     
