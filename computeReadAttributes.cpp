@@ -83,6 +83,8 @@ struct ReadPairInfo {
 
 //Map to check how many repeats I need to find in a read w.r.t. motif length
 map<int,int> repeatNumbers;
+//Vector to store my repeat purity demands w.r.t motif length.
+std::vector<Pair<float> > purityDemands (6);
 
 //For repeating a motif n times
 Dna5String repeat(Dna5String s, int n) {
@@ -227,7 +229,7 @@ Pair<Pair<int>, int> findPattern(Dna5String & pattern, Dna5String & readSequence
 }
 
 //Compute the actual number of repeats/expected number of repeats based on length
-float getPurity(Dna5String motif, Dna5String STRsequence)
+float getPurity(Dna5String & motif, Dna5String STRsequence)
 {
     unsigned motifLength = length(motif);
     float expectReps = (float)length(STRsequence)/(float)motifLength;
@@ -288,13 +290,49 @@ int getTagValue(BamAlignmentRecord& record, CharString tagName)
     }
 }
 
+unsigned checkForAndRemoveSoftClippingAfter(BamAlignmentRecord& record)
+{
+    unsigned nRemoved = 0;
+    String<CigarElement<> > cigarString = record.cigar;
+    CharString cigarOperation = cigarString[length(cigarString)-1].operation;
+    string cigarOperationStr = toCString(cigarOperation);
+    if (cigarOperationStr.compare("S")==0)
+    {
+        nRemoved = cigarString[length(cigarString)-1].count;
+        for (unsigned i = 0; i<cigarString[length(cigarString)-1].count; ++i)
+        {
+            eraseBack(record.seq);
+            eraseBack(record.qual);
+        }
+        eraseBack(record.cigar);
+    }
+    return nRemoved;
+}
+
+unsigned checkForAndRemoveSoftClippingBefore(BamAlignmentRecord& record)
+{
+    unsigned nRemoved = 0;
+    String<CigarElement<> > cigarString = record.cigar;
+    CharString cigarOperation = cigarString[0].operation;
+    string cigarOperationStr = toCString(cigarOperation);
+    if (cigarOperationStr.compare("S")==0)
+    {
+        nRemoved = cigarString[0].count;
+        erase(record.seq, 0, cigarString[0].count);
+        erase(record.qual, 0, cigarString[0].count);
+        erase(record.cigar, 0);
+    }
+    return nRemoved;
+}
+
 //Computes all sorts of quality indicators for the given read w.r.t. the given microsatellite
-Pair<Triple<CharString, CharString, int>,ReadInfo> computeReadInfo(BamAlignmentRecord record, STRinfo& markerInfo, Pair<Pair<int>, float> coordinates, int minFlank, int maxRepeatLength)
+Pair<Triple<CharString, CharString, int>,ReadInfo> computeReadInfo(BamAlignmentRecord& record, STRinfo& markerInfo, Pair<Pair<int>, float> coordinates, int minFlank, int maxRepeatLength)
 {
     //Type definition for alignment structure
     typedef Dna5String TSequence;
     typedef Align<TSequence,ArrayGaps> TAlign;
     typedef Row<TAlign>::Type TRow;
+    //cout << "Looking at read: " << record.qName << endl;
 
     //Create alignment structures, before and after
     TAlign alignBefore;
@@ -303,13 +341,13 @@ Pair<Triple<CharString, CharString, int>,ReadInfo> computeReadInfo(BamAlignmentR
     resize(rows(alignAfter), 2);
     assignSource(row(alignBefore,0),markerInfo.refBf);
     assignSource(row(alignAfter,0),markerInfo.refAf);
-
+    
     //Variables for sequence-parts
     Dna5String before, repeatRegion, after;
     CharString qualString = record.qual;
     ReadInfo mapValue;
     int oldStartCoord = coordinates.i1.i1;
-
+    unsigned motifLength = length(markerInfo.motif);
     //Create key for storing readInfo in map
     Triple<CharString, CharString, int> mapKey = Triple<CharString, CharString, int>(record.qName, markerInfo.chrom, markerInfo.STRstart);
 
@@ -329,21 +367,16 @@ Pair<Triple<CharString, CharString, int>,ReadInfo> computeReadInfo(BamAlignmentR
     assignSource(row(alignAfter,1),after);
     int scoreBf = globalAlignment(alignBefore, Score<int,Simple>(1,-2,-1,-5), AlignConfig<true, false, true, false>());
     int scoreAf = globalAlignment(alignAfter, Score<int,Simple>(1,-2,-1,-5), AlignConfig<false, true, false, true>());
-    //This is for debugging the overlap alignment to the reference
-    /*cout << "Alignment in front with score: " << scoreBf << "\n";
-    cout << alignBefore << "\n";
-    cout << "Alignment behind with score: " << scoreAf << "\n";
-    cout << alignAfter << "\n";*/
 
     int viewPosition = toViewPosition(row(alignBefore,0),length(source(row(alignBefore,0)))-1);
     int startCoord = toSourcePosition(row(alignBefore,1),viewPosition)+1;
     if (startCoord == 1 && isGap(row(alignBefore,1),viewPosition))
         startCoord -= 1;
     int endCoord = toSourcePosition(row(alignAfter,1),toViewPosition(row(alignAfter,0),0))-1;
-    int flankSum = startCoord + length(source(row(alignAfter,1)))-endCoord - 1;
     int leftFlank = startCoord;
     int rightFlank = length(source(row(alignAfter,1)))-endCoord - 1;
-    /*if (debug)
+    /*bool debug = true;
+    if (debug)
     {
         cout << "FlankSum: " << flankSum << " leftFlank: " << leftFlank << " rightFlank: " << rightFlank << endl;
         if (leftFlank > 0)
@@ -354,15 +387,54 @@ Pair<Triple<CharString, CharString, int>,ReadInfo> computeReadInfo(BamAlignmentR
         cout << "Old start coord: " << oldStartCoord << endl;
         cout << "End coord: " << endCoord << endl;
         cout << "Infix command is: infix(" << startCoord << "," << oldStartCoord+endCoord+1 << ")" << endl;
-        cout << "Repeat purity: " << getPurity(markerInfo.motif,infix(record.seq, startCoord, oldStartCoord+endCoord+1)) << endl;
+        //cout << "Repeat purity: " << getPurity(markerInfo.motif,infix(record.seq, startCoord, oldStartCoord+endCoord+1)) << endl;
         cout << "Reference repeat purity: " << getPurity(markerInfo.motif, markerInfo.refRepSeq) << endl;
     }*/
     double refRepPurity = markerInfo.refRepPurity;
     bool startOk = false;
     bool endOk = false;
     bool purityOk = false;
+    //Here we check wether the alignment scores fail our criteria, if they do then we see if we can remove soft clipped sequences and realign.
+    if ((float)scoreAf/(float)(length(after)-endCoord) < 0.6 && !hasFlagUnmapped(record))
+    {
+        //cout << "Going into checkForAndRemoveSoftClippingAfter at read: " << record.qName << endl;
+        unsigned readLength = length(record.seq);
+        unsigned nRemoved = checkForAndRemoveSoftClippingAfter(record);
+        if (nRemoved>0 && readLength - nRemoved > coordinates.i1.i2)
+        {
+            //redefine after region and realign
+            after = suffix(record.seq, coordinates.i1.i1);
+            assignSource(row(alignAfter,1),after);
+            scoreAf = globalAlignment(alignAfter, Score<int,Simple>(1,-2,-1,-5), AlignConfig<false, true, false, true>());
+            endCoord = toSourcePosition(row(alignAfter,1),toViewPosition(row(alignAfter,0),0))-1;
+            rightFlank = length(source(row(alignAfter,1)))-endCoord - 1;
+        }
+        //cout << "Finished checkForAndRemoveSoftClippingAfter." << endl;
+    }
+    if ((float)scoreBf/(float)(startCoord+1) < 0.6 && !hasFlagUnmapped(record))
+    {
+        //cout << "Going into checkForAndRemoveSoftClippingBefore at read: " << record.qName << endl;
+        unsigned nRemoved = checkForAndRemoveSoftClippingBefore(record);
+        if (nRemoved>0 && nRemoved < coordinates.i1.i1)
+        {
+            //redefine before region and realign
+            coordinates.i1.i2 -= nRemoved;
+            coordinates.i1.i1 -= nRemoved;
+            before = prefix(record.seq, coordinates.i1.i2+1);
+            assignSource(row(alignBefore,1),before);
+            scoreBf = globalAlignment(alignBefore, Score<int,Simple>(1,-2,-1,-5), AlignConfig<true, false, true, false>());
+            viewPosition = toViewPosition(row(alignBefore,0),length(source(row(alignBefore,0)))-1);
+            startCoord = toSourcePosition(row(alignBefore,1),viewPosition)+1;
+            if (startCoord == 1 && isGap(row(alignBefore,1),viewPosition))
+                startCoord -= 1;
+            leftFlank = startCoord;
+        }
+        //cout << "Finished checkForAndRemoveSoftClippingBefore." << endl;
+    }
+    int flankSum = leftFlank + rightFlank;
     if ((startCoord >= oldStartCoord + endCoord) || (((oldStartCoord+endCoord+1)-startCoord < maxRepeatLength) && (leftFlank < markerInfo.minFlankLeft || rightFlank < markerInfo.minFlankRight)))
     {
+        //cout << "Failing flanking and start/end coord check." << endl;
         coordinates.i1.i1 = startCoord;
         coordinates.i1.i2 = endCoord;
         mapValue.ratioBf = 0;
@@ -379,8 +451,9 @@ Pair<Triple<CharString, CharString, int>,ReadInfo> computeReadInfo(BamAlignmentR
         return Pair<Triple<CharString, CharString, int>,ReadInfo>(mapKey,mapValue);
     }
     double readPurity = getPurity(markerInfo.motif,infix(record.seq, startCoord, oldStartCoord+endCoord+1));
-    if (readPurity <= 0.75*refRepPurity)
+    if (readPurity <= purityDemands[motifLength-1].i1*refRepPurity)
     {
+        //cout << "Failing read purity check" << endl;
         coordinates.i1.i1 = startCoord;
         coordinates.i1.i2 = endCoord;
         mapValue.ratioBf = 0;
@@ -415,7 +488,7 @@ Pair<Triple<CharString, CharString, int>,ReadInfo> computeReadInfo(BamAlignmentR
         cout << "End ok: " << endOk << endl;
         cout << "Purity ok: " << purityOk << endl;
     }*/
-    if (((oldStartCoord+endCoord+1)-startCoord >= maxRepeatLength) && (leftFlank < markerInfo.minFlankLeft) && (flankSum>=2*minFlank) && ((float)scoreAf/(float)(length(after)-endCoord)>0.7) && (readPurity>(0.8*refRepPurity)))
+    if (((oldStartCoord+endCoord+1)-startCoord >= maxRepeatLength) && (leftFlank < markerInfo.minFlankLeft) && (flankSum>=2*minFlank) && ((float)scoreAf/(float)(length(after)-endCoord)>0.7) && (readPurity>(purityDemands[motifLength-1].i2*refRepPurity)))
     {
         //cout << "Am making greater than allele on left end." << endl;
         coordinates.i1.i1 = startCoord;
@@ -431,7 +504,7 @@ Pair<Triple<CharString, CharString, int>,ReadInfo> computeReadInfo(BamAlignmentR
     }
     else
     {
-        if (((oldStartCoord+endCoord+1)-startCoord >= maxRepeatLength) && (rightFlank < markerInfo.minFlankRight) && (flankSum>=2*minFlank) && ((float)scoreBf/(float)(startCoord+1)>0.7) && (readPurity>(0.8*refRepPurity)))
+        if (((oldStartCoord+endCoord+1)-startCoord >= maxRepeatLength) && (rightFlank < markerInfo.minFlankRight) && (flankSum>=2*minFlank) && ((float)scoreBf/(float)(startCoord+1)>0.7) && (readPurity>(purityDemands[motifLength-1].i2*refRepPurity)))
         {
             //cout << "Am making greater than allele on right end." << endl;
             coordinates.i1.i1 = startCoord;
@@ -447,7 +520,7 @@ Pair<Triple<CharString, CharString, int>,ReadInfo> computeReadInfo(BamAlignmentR
         }
         else
         {
-            if (rightFlank < markerInfo.minFlankRight && leftFlank < markerInfo.minFlankLeft && readPurity>(0.85*refRepPurity) && (oldStartCoord+endCoord+1)-startCoord >= maxRepeatLength)
+            if (rightFlank < markerInfo.minFlankRight && leftFlank < markerInfo.minFlankLeft && readPurity>(purityDemands[motifLength-1].i2*refRepPurity) && (oldStartCoord+endCoord+1)-startCoord >= maxRepeatLength)
             {
                 //cout << "Am making a SUPER allele." << endl;
                 coordinates.i1.i1 = 0;
@@ -463,8 +536,8 @@ Pair<Triple<CharString, CharString, int>,ReadInfo> computeReadInfo(BamAlignmentR
             }
             else
             {
-                //If both coordinates are ok, the distance between them is > motifLength * min#ofMotifs and alignment scores on both enda are ok then the read is useful.
-                if (startOk && endOk && purityOk && startCoord < oldStartCoord + endCoord && (float)scoreBf/((float)startCoord+1)>0.5 && (float)scoreAf/(float)(length(after)-endCoord-1)>0.5)
+                //If both coordinates are ok, the distance between them is > motifLength * min#ofMotifs and alignment scores on both end are ok then the read is useful.
+                if (startOk && endOk && purityOk && startCoord < oldStartCoord + endCoord && (float)scoreBf/((float)startCoord+1)>0.6 && (float)scoreAf/(float)(length(after)-endCoord-1)>0.6)
                 {
                     coordinates.i1.i1 = startCoord;
                     coordinates.i1.i2 = endCoord;
@@ -490,6 +563,7 @@ Pair<Triple<CharString, CharString, int>,ReadInfo> computeReadInfo(BamAlignmentR
                 //Otherwise I can't use the read so I set numOfRepeats to 666
                 else
                 {
+                    //cout << "Failing alignment score requirements" << endl;
                     //cout << "Setting num of repeats to 666 in the last else statement." << endl;
                     coordinates.i1.i1 = startCoord;
                     coordinates.i1.i2 = endCoord;
@@ -538,7 +612,7 @@ Pair<Triple<CharString, CharString, int>,ReadInfo> computeReadInfo(BamAlignmentR
     /*if (mapValue.numOfRepeats != 666)
         cout << "Used this read and gave: " << mapValue.numOfRepeats << "repeats.\n";
     else
-        cout << "Didn't use this read.";*/
+        cout << "Didn't use this read." << endl;*/
     return Pair<Triple<CharString, CharString, int>,ReadInfo>(mapKey,mapValue);
 }
 
@@ -682,7 +756,13 @@ int main(int argc, char const ** argv)
     repeatNumbers[4]=2;
     repeatNumbers[5]=2;
     repeatNumbers[6]=2;
-
+    //set up the purity I require for each motif length
+    purityDemands[0] = Pair<float>(0.9,0.95);
+    purityDemands[1] = Pair<float>(0.85,0.9);
+    purityDemands[2] = Pair<float>(0.8,0.85);
+    purityDemands[3] = Pair<float>(0.8,0.85);
+    purityDemands[4] = Pair<float>(0.75,0.85);
+    purityDemands[5] = Pair<float>(0.75,0.85);
     // Setup name store, cache, and BAM I/O context.
     typedef StringSet<CharString> TNameStore;
     typedef NameStoreCache<TNameStore> TNameStoreCache;
