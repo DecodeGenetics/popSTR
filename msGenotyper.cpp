@@ -7,12 +7,18 @@
 #include <vector>
 #include <numeric>
 #include <sstream>
+#include <fstream>
+#include <ios>
 #include <sys/stat.h>
 #include <seqan/file.h>
 #include <seqan/find.h>
 #include <seqan/basic.h>
 #include <seqan/vcf_io.h>
 #include <seqan/sequence.h>
+#include <boost/iostreams/filtering_stream.hpp>
+#include <boost/iostreams/filtering_streambuf.hpp>
+#include <boost/iostreams/copy.hpp>
+#include <boost/iostreams/filter/gzip.hpp>
 #include <liblinear-2.01/linear.h>
 #include <liblinear-2.01/linear.cpp>
 #include <liblinear-2.01/tron.h>
@@ -25,6 +31,7 @@
 #include <liblinear-2.01/blas/dscal.c>
 #define Malloc(type,n) (type *)malloc((n)*sizeof(type))
 
+namespace io = boost::iostreams;
 using namespace std;
 using namespace seqan;
 
@@ -150,7 +157,7 @@ double getPval(Marker marker, AttributeLine currentLine)
 }
 
 //Parses one line from attribute file by filling up and returning an AttributeLine, also initializes markerToSizeAndModel map using the labels
-AttributeLine parseNextLine(float winner, float second, ifstream& attributeFile, Marker& marker, string PnId, map<Pair<string,Marker>, GenotypeInfo>& PnAndMarkerToGenotype, String<string> firstLine, bool useFirstLine, bool useModelAndLabels, bool enoughReads)
+AttributeLine parseNextLine(float winner, float second, io::filtering_istream& attributeFile, Marker& marker, string PnId, map<Pair<string,Marker>, GenotypeInfo>& PnAndMarkerToGenotype, String<string> firstLine, bool useFirstLine, bool useModelAndLabels, bool enoughReads)
 {
     PnAndMarkerToGenotype[Pair<string,Marker>(PnId, marker)].genotype = Pair<float>(winner,second);
     AttributeLine currentLine;
@@ -919,14 +926,27 @@ int main(int argc, char const ** argv)
 
     //Iterate over all Pns I have slippage for and read from attribute files in the given interval
     map<string, Pair<double, int> >::const_iterator pnEnd = pnToSize.end();
+    int nProcessedPns = 0;
     for (map<string, Pair<double, int> >::iterator pnStart = pnToSize.begin(); pnStart != pnEnd; ++pnStart)
     {
         PnId = pnStart->first;
         append(attributePath, PnId);
-        ifstream attributeFile(toCString(attributePath));
-        while (!attributeFile.eof())
+        append(attributePath, ".gz");
+        std::ifstream attributeFileGz(toCString(attributePath), std::ios_base::in | std::ios_base::binary);
+        io::filtering_istream attributeFile;
+        attributeFile.push(io::gzip_decompressor());
+        attributeFile.push(attributeFileGz);
+        if (attributeFile.fail())
         {
-            getline (attributeFile,nextLine);
+            cout << "Unable to locate attribute file for " << PnId << " at " << attributePath << endl;
+            attributePath = attributePathBase;
+            continue;
+        }
+        ++nProcessedPns;
+        if (nProcessedPns % 1000==0)
+            cout << "Working on pn number: " << nProcessedPns << endl;
+        while (getline (attributeFile,nextLine))
+        {
             if (nextLine.length() == 0)
                 continue;
             numberOfWordsAndWords = countNumberOfWords(nextLine);
@@ -1021,7 +1041,6 @@ int main(int argc, char const ** argv)
                 cerr << "Format error in attribute file!" << endl;
         }
         attributePath = attributePathBase;
-        attributeFile.close();
         labelFile.close();
     }
     chrom = marker.chrom;
@@ -1085,8 +1104,10 @@ int main(int argc, char const ** argv)
     Pair<double, int> slippAndNavail;
 
     //Loop over map from Marker to string<AttributeLine> and train model for each marker and use it to determine genotype
-    map<Marker, String<AttributeLine> >::iterator itEnd = mapPerMarker.end();
-    for (map<Marker, String<AttributeLine> >::iterator it = mapPerMarker.begin(); it != itEnd; ++it)
+    //map<Marker, String<AttributeLine> >::iterator itEnd = mapPerMarker.end();
+    //for (map<Marker, String<AttributeLine> >::iterator it = mapPerMarker.begin(); it != itEnd; ++it)
+    map<Marker, String<AttributeLine> >::iterator it = mapPerMarker.begin();
+    while (mapPerMarker.size()>0)
     {
         thisMarker = it->first;
         PnsAtMarker = 1;
@@ -1243,6 +1264,8 @@ int main(int argc, char const ** argv)
             if (markerToTrueAlleles[thisMarker].size() < 2)
             {
                 cout << "Not enough alleles at marker " << z << endl;
+                mapPerMarker.erase(thisMarker);
+                it = mapPerMarker.begin();
                 ++z;
                 continue;
             }
@@ -1294,6 +1317,8 @@ int main(int argc, char const ** argv)
         markerSlippageOut << thisMarker.chrom << "\t" << thisMarker.start << "\t" << thisMarker.end << "\t" << thisMarker.motif << "\t" << thisMarker.refRepeatNum << "\t" << thisMarker.refRepSeq << "\t" << setprecision(4) << fixed << markerToSizeAndModel[thisMarker].i1.i2 << "\t" << nAvailable << "\t" << markerToNallelesAndStutter[thisMarker].i1 << "\t" << markerToNallelesAndStutter[thisMarker].i2 << endl;
         cout << thisMarker.start << " totalSlipp: " << setprecision(4) << fixed << markerToSizeAndModel[thisMarker].i1.i2 << endl;
         cout << "Finished marker number: " << z << endl;
+        mapPerMarker.erase(thisMarker);
+        it = mapPerMarker.begin();
         ++z;
     }
     String<Pair<float> > labels;
