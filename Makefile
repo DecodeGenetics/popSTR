@@ -1,7 +1,9 @@
 # include libraries
 CXXFLAGS+=-I.
-CXXFLAGS+=-I./seqan-library-1.4.1/include
+CXXFLAGS+=-isystem./seqan-library-1.4.1/include
+CXXFLAGS+=-isystem /odinn/users/hannese/git/boost_1_61_0/build/include
 
+LDFLAGS=-g -L/odinn/users/hannese/git/boost_1_61_0/build/lib -lz -lboost_iostreams
 
 # RELEASE build
 CXXFLAGS+=-O3 -DSEQAN_ENABLE_TESTING=0 -DSEQAN_ENABLE_DEBUG=0 -DSEQAN_HAS_ZLIB=1 
