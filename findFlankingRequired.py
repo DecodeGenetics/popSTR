@@ -33,11 +33,11 @@ with open(original_markers_file, 'r') as om_file:
             refAf = line[6]
             repeatSeq = line[7]
             nBasesRequiredBf = checkBf(refBf, repeatSeq)
-            if nBasesRequiredBf > 4:
-                print 'Require ' + str(nBasesRequiredBf) + ' before marker at ' + line[1]
+            #if nBasesRequiredBf > 4:
+                #print 'Require ' + str(nBasesRequiredBf) + ' before marker at ' + line[1]
             nBasesRequiredAf = checkAf(refAf, repeatSeq)
-            if nBasesRequiredAf > 4:
-                print 'Require ' + str(nBasesRequiredAf) + ' after marker at ' + line[1]
+            #if nBasesRequiredAf > 4:
+                #print 'Require ' + str(nBasesRequiredAf) + ' after marker at ' + line[1]
             line.append(str(nBasesRequiredBf))
             line.append(str(nBasesRequiredAf))
             am_file.write('\t'.join(line)+'\n')
