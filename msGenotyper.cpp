@@ -464,7 +464,7 @@ void makeVcfHeader(VcfStream& out, String<string> PnIds, string chrom)
     for (unsigned i = 0; i<length(PnIds); ++i)
         appendValue(out.header.sampleNames, PnIds[i]);
     unsigned chromLength = getChrLength(chrom);
-    string contigString = "<ID=" + chrom + ", length=" + to_string((long long unsigned int)chromLength) + ">";
+    string contigString = "<ID=" + chrom + ",length=" + to_string((long long unsigned int)chromLength) + ">";
     //Complicated way of getting todays date
     time_t rawtime;
     tm* timeinfo;
