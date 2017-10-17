@@ -10,6 +10,7 @@
 #include <sstream>
 #include <fstream>
 #include <ios>
+#include <stdio.h>
 #include <sys/stat.h>
 #include <seqan/file.h>
 #include <seqan/find.h>
@@ -612,6 +613,24 @@ void stringClear(stringstream& ss, CharString& str)
     clear(str);
 }
 
+Pair<int> findGenotypeIndices(GenotypeInfo& genotype, std::set<float>& allelesAtMarker)
+{
+    Pair<int> gtIdxs = Pair<int>(0,0);
+    unsigned idx = 1;
+    float currentAllele;
+    std::set<float>::iterator allEnd = allelesAtMarker.end();
+    for (std::set<float>::iterator allIt = allelesAtMarker.begin(); allIt!=allEnd; ++allIt)
+    {
+        currentAllele = *allIt;
+        if (currentAllele == genotype.genotype.i1)
+            gtIdxs.i1 = idx;
+        if (currentAllele == genotype.genotype.i2)
+            gtIdxs.i2 = idx;
+        idx++;
+    }
+    return gtIdxs;
+}
+
 VcfRecord fillRecordMarker(Marker marker, std::set<float> allelesAtThisMarker)
 {
     int refLength = marker.end - (marker.start-1);
@@ -622,12 +641,27 @@ VcfRecord fillRecordMarker(Marker marker, std::set<float> allelesAtThisMarker)
     ss << record.beginPos+1;
     CharString str = ss.str();
     record.id = marker.chrom + ":" + toCString(str) + ":M";
-    stringClear(ss,str);
+    //Get ref seq using crop_fasta and set as record.ref
+    string refSeq;
+    FILE * stream;
+    char buffer[256];
+    stringstream cmdStream;
+    cmdStream << "/odinn/users/snaedisk/bin/crop_fasta /odinn/data/reference/Homo_sapiens-deCODE-hg38/Sequence/WholeGenomeFasta/genome.fa " << marker.chrom << ":" << toCString(str) << "-" << marker.end;
+    string cmd = cmdStream.str();
+    cmd.append(" 2>&1");
+    stream = popen(cmd.c_str(), "r");
+    if (stream) {
+        while (!feof(stream))
+        if (fgets(buffer, 256, stream) != NULL)
+        {
+            buffer[strcspn(buffer, "\n")] = 0;
+            refSeq.append(buffer);
+        }
+        pclose(stream);
+    }
     //Set reference allele and delete it from allele set
-    ss << marker.refRepeatNum;
-    CharString ref = ss.str();
-    record.ref = ref;
     stringClear(ss,str);
+    record.ref = refSeq;
     allelesAtThisMarker.erase(marker.refRepeatNum);
     record.qual = record.MISSING_QUAL();
     record.info = "RefLen=";
@@ -644,11 +678,12 @@ VcfRecord fillRecordMarker(Marker marker, std::set<float> allelesAtThisMarker)
     std::set<float>::iterator allEnd = allelesAtThisMarker.end();
     for (std::set<float>::iterator allIt = allelesAtThisMarker.begin(); allIt!=allEnd; ++allIt)
     {
+        append(record.alt, "<");
         currentAllele = *allIt;
         ss << currentAllele;
         str = ss.str();
         append(record.alt, str);
-        append(record.alt, ",");
+        append(record.alt, ">,");
         stringClear(ss,str);
     }
     if (allelesAtThisMarker.size() > 0)
@@ -659,7 +694,7 @@ VcfRecord fillRecordMarker(Marker marker, std::set<float> allelesAtThisMarker)
 }
 
 //Fill up the PN-specific fields in the VCF-record.
-void fillRecordPn(GenotypeInfo genotype, VcfRecord& record, MakeGenotypesRet genotypesAtThisMarker, std::set<float>& allelesAtMarker)
+void fillRecordPn(GenotypeInfo genotype, VcfRecord& record, MakeGenotypesRet genotypesAtThisMarker, std::set<float>& allelesAtMarker, Marker& marker)
 {
     unsigned indexOfCurrGt; 
     while (genotypesAtThisMarker.genotypesSet.find(genotype.genotype)== genotypesAtThisMarker.genotypesSet.end() && length(genotype.genotypes)>1)
@@ -671,17 +706,21 @@ void fillRecordPn(GenotypeInfo genotype, VcfRecord& record, MakeGenotypesRet gen
         genotype.genotype = genotype.genotypes[indexOfCurrGt];
         genotype.pValue = genotype.pValues[indexOfCurrGt];
     }
-    float refAllele = -1;
-    refAllele = lexicalCast<float>(record.ref);
+    float refAllele = marker.refRepeatNum;
+    //Remove ref allele from set.
+    allelesAtMarker.erase(refAllele);
     stringstream ss;
     CharString str = ss.str();
     CharString gtInfo; //First I make the string containing the genotype info
-    ss << genotype.genotype.i1;
+    Pair<int> gtIdxs = findGenotypeIndices(genotype, allelesAtMarker);
+    //ss << genotype.genotype.i1;
+    ss << gtIdxs.i1;
     str = ss.str();
     append(gtInfo,str);
     stringClear(ss,str);
     append(gtInfo,"/");
-    ss << genotype.genotype.i2;
+    //ss << genotype.genotype.i2;
+    ss << gtIdxs.i2;
     str = ss.str();
     append(gtInfo,str);
     stringClear(ss,str);
@@ -697,8 +736,6 @@ void fillRecordPn(GenotypeInfo genotype, VcfRecord& record, MakeGenotypesRet gen
         stringClear(ss,str);
         append(gtInfo,",");
     }
-    //Remove ref allele from set before looping over
-    allelesAtMarker.erase(refAllele);
     //Add allele depth counts for other alleles
     for (auto const & allele : allelesAtMarker)
     {
@@ -1296,7 +1333,7 @@ int main(int argc, char const ** argv)
             if ((PnAndMarkerToGenotype.count(Pair<string,Marker>(thisPn, thisMarker)) != 0))
             {
                 genotype = PnAndMarkerToGenotype[Pair<string,Marker>(thisPn, thisMarker)];
-                fillRecordPn(genotype, record, genotypesAtThisMarker, markerToTrueAlleles[thisMarker]);
+                fillRecordPn(genotype, record, genotypesAtThisMarker, markerToTrueAlleles[thisMarker], thisMarker);
                 PnAndMarkerToGenotype.erase(Pair<string,Marker>(thisPn, thisMarker));
             }
             //If a decision has not been made I add a CharString with no decision(0:0,0,0,0....etc) to the set to maintain order of Pns vs genotypeInfos in output
