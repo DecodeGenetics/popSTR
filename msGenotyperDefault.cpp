@@ -696,7 +696,7 @@ VcfRecord fillRecordMarker(Marker marker, std::set<float> allelesAtThisMarker)
 //Fill up the PN-specific fields in the VCF-record.
 void fillRecordPn(GenotypeInfo genotype, VcfRecord& record, MakeGenotypesRet genotypesAtThisMarker, std::set<float>& allelesAtMarker, Marker& marker)
 {
-    unsigned indexOfCurrGt; 
+    unsigned indexOfCurrGt;
     while (genotypesAtThisMarker.genotypesSet.find(genotype.genotype)== genotypesAtThisMarker.genotypesSet.end() && length(genotype.genotypes)>1)
     {
         indexOfCurrGt = findMinIndex(genotype.pValues);
@@ -752,6 +752,13 @@ void fillRecordPn(GenotypeInfo genotype, VcfRecord& record, MakeGenotypesRet gen
     }
     //put ref allele back in set after looping over
     allelesAtMarker.insert(refAllele);
+    unsigned possibleGenotypes = 0;
+    for (unsigned i=0; i<allelesAtMarker.size(); ++i)
+    {
+        possibleGenotypes += i+1;
+    }
+    if (length(genotypesAtThisMarker.genotypes) != possibleGenotypes)
+        cerr << "ATTENTION: number of genotypes considered is wrong. It should be: " << possibleGenotypes << " but it is:" << length(genotypesAtThisMarker.genotypes) << endl;
     eraseBack(gtInfo);
     append(gtInfo,":");
     //Add readDepth to gtInfo
@@ -1318,6 +1325,8 @@ int main(int argc, char const ** argv)
         }
         //Make a Pair<std::set<Pair<float> > String<Pair<float> > > which contains a list and set of genotypes
         cout << "Number of verified alleles: " << markerToTrueAlleles[thisMarker].size() << endl;
+        //Have to add ref allele to true allele set in case no one has it.
+        markerToTrueAlleles[thisMarker].insert(thisMarker.refRepeatNum);
         genotypesAtThisMarker = makeGenotypes(markerToTrueAlleles[thisMarker], thisMarker.refRepeatNum);
         cout << "Number of available genotypes: " << genotypesAtThisMarker.genotypesSet.size() << endl;
         //Compute abs(allele1-allele2)*allele1Freq*allele2Freq for all genotypes and return average of those, estimate of distance between alleles.
