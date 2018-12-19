@@ -19,7 +19,7 @@
 #include <seqan/sequence.h>
 #include <seqan/arg_parse.h>
 #include <boost/iostreams/filtering_stream.hpp>
-#include <boost/iostreams/filtering_streambuf.hpp>
+#include <boost/iostreams/device/file.hpp>
 #include <boost/iostreams/copy.hpp>
 #include <boost/iostreams/filter/gzip.hpp>
 #include <liblinear-2.01/linear.h>
@@ -209,7 +209,7 @@ void fillProblemX(int idx, AttributeLine currentLine, problem& myProb)
 }
 
 //Parses one line from attribute file by filling up and returning an AttributeLine, also initializes markerToLabelsAndSlipp map using the labels
-AttributeLine parseNextLine(float winner, float second, io::filtering_istream& attributeFile, Marker& marker, string PnId, map<Pair<string,Marker>, GenotypeInfo>& PnAndMarkerToGenotype, String<string> firstLine, bool useFirstLine, bool enoughReads)
+AttributeLine parseNextLine(float winner, float second, bool is_gz, ifstream& attributeFile, io::filtering_istream& attributeFile_gz, Marker& marker, string PnId, map<Pair<string,Marker>, GenotypeInfo>& PnAndMarkerToGenotype, String<string> firstLine, bool useFirstLine, bool enoughReads)
 {
     PnAndMarkerToGenotype[Pair<string,Marker>(PnId, marker)].genotype = Pair<float>(winner,second);
     AttributeLine currentLine;
@@ -230,17 +230,34 @@ AttributeLine parseNextLine(float winner, float second, io::filtering_istream& a
     }
     else
     {
-        attributeFile >> currentLine.numOfRepeats;
-        attributeFile >> currentLine.ratioBf;
-        attributeFile >> currentLine.ratioAf;
-        attributeFile >> currentLine.locationShift;
-        attributeFile >> currentLine.mateEditDist;
-        attributeFile >> currentLine.purity;
-        attributeFile >> currentLine.ratioOver20In;
-        attributeFile >> currentLine.ratioOver20After;
-        attributeFile >> currentLine.sequenceLength;
-        attributeFile >> currentLine.wasUnaligned;
-        attributeFile >> currentLine.repSeq;
+        if (is_gz)
+        {
+            attributeFile_gz >> currentLine.numOfRepeats;
+            attributeFile_gz >> currentLine.ratioBf;
+            attributeFile_gz >> currentLine.ratioAf;
+            attributeFile_gz >> currentLine.locationShift;
+            attributeFile_gz >> currentLine.mateEditDist;
+            attributeFile_gz >> currentLine.purity;
+            attributeFile_gz >> currentLine.ratioOver20In;
+            attributeFile_gz >> currentLine.ratioOver20After;
+            attributeFile_gz >> currentLine.sequenceLength;
+            attributeFile_gz >> currentLine.wasUnaligned;
+            attributeFile_gz >> currentLine.repSeq;
+        }
+        else
+        {
+            attributeFile >> currentLine.numOfRepeats;
+            attributeFile >> currentLine.ratioBf;
+            attributeFile >> currentLine.ratioAf;
+            attributeFile >> currentLine.locationShift;
+            attributeFile >> currentLine.mateEditDist;
+            attributeFile >> currentLine.purity;
+            attributeFile >> currentLine.ratioOver20In;
+            attributeFile >> currentLine.ratioOver20After;
+            attributeFile >> currentLine.sequenceLength;
+            attributeFile >> currentLine.wasUnaligned;
+            attributeFile >> currentLine.repSeq;
+        }
     }
     currentLine.pValue = 0.95;
     if (enoughReads)
@@ -1028,21 +1045,26 @@ int main(int argc, char const ** argv)
     {
         PnId = pnStart->first;
         append(attributePath, PnId);
-        append(attributePath, ".gz");
-        std::ifstream attributeFileGz(toCString(attributePath), std::ios_base::in | std::ios_base::binary);
-        io::filtering_istream attributeFile;
-        attributeFile.push(io::gzip_decompressor());
-        attributeFile.push(attributeFileGz);
-        if (attributeFile.fail())
-        {
-            cout << "Unable to locate attribute file for " << PnId << " at " << attributePath << endl;
-            attributePath = options.attDirChromNum;
-            continue;
-        }
         ++nProcessedPns;
         if (nProcessedPns % 1000==0)
             cout << "Working on pn number: " << nProcessedPns << endl;
-        while (getline (attributeFile,nextLine))
+        
+        bool is_gz = false;
+        io::filtering_istream attributeFile_gz;
+        ifstream attributeFile;
+        
+        if (!ifstream(toCString(attributePath)))
+        {
+            is_gz = true;
+            append(attributePath, ".gz");
+            io::file_source attributeFileGz(toCString(attributePath), std::ios_base::in | std::ios_base::binary);
+            attributeFile_gz.push(io::gzip_decompressor());
+            attributeFile_gz.push(attributeFileGz);
+        }
+        else
+            attributeFile.open(toCString(attributePath));
+            
+        while (is_gz ? std::getline (attributeFile_gz, nextLine) : std::getline (attributeFile, nextLine))
         {
             if (nextLine.length() == 0)
                 continue;
@@ -1064,9 +1086,15 @@ int main(int argc, char const ** argv)
                 //If I am in front of the interval, I move to the next marker.
                 if (marker.start < startCoord)
                 {
-                    for (unsigned i = 0; i < numberOfReads; ++i)
+                    if (is_gz)
                     {
-                        getline (attributeFile,nextLine);
+                        for (unsigned i = 0; i < numberOfReads; ++i)
+                            getline (attributeFile_gz,nextLine);
+                    }
+                    else
+                    {
+                        for (unsigned i = 0; i < numberOfReads; ++i)
+                            getline (attributeFile,nextLine);
                     }
                     continue;
                 }
@@ -1079,7 +1107,6 @@ int main(int argc, char const ** argv)
                 second = lexicalCast<float>(numberOfWordsAndWords.i2[8]);
                 markerToAlleles[marker].insert(winner);
                 markerToAlleles[marker].insert(second);
-
             }
             if (numberOfWordsAndWords.i1 == 11)
             {
@@ -1091,9 +1118,9 @@ int main(int argc, char const ** argv)
                 for (unsigned i = 0; i < numberOfReads; ++i)
                 {
                     if (i == 0)
-                        currentLine = parseNextLine(winner, second, attributeFile, marker, PnId, PnAndMarkerToGenotype, numberOfWordsAndWords.i2, true, enoughReads);
+                        currentLine = parseNextLine(winner, second, is_gz, attributeFile, attributeFile_gz, marker, PnId, PnAndMarkerToGenotype, numberOfWordsAndWords.i2, true, enoughReads);
                     else
-                        currentLine = parseNextLine(winner, second, attributeFile, marker, PnId, PnAndMarkerToGenotype, numberOfWordsAndWords.i2, false, enoughReads);
+                        currentLine = parseNextLine(winner, second, is_gz, attributeFile, attributeFile_gz, marker, PnId, PnAndMarkerToGenotype, numberOfWordsAndWords.i2, false, enoughReads);
                     appendValue(mapPerMarker[marker],currentLine);
                 }
                 enoughReads = true;
