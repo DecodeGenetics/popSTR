@@ -208,7 +208,6 @@ void fillProblemX(int idx, AttributeLine currentLine, problem& myProb)
 }
 
 //Parses one line from attribute file by filling up and returning an AttributeLine, also initializes markerToLabelsAndSlipp map using the labels
-//AttributeLine parseNextLine(float winner, float second, io::filtering_istream& attributeFile, Marker& marker, string PnId, map<Pair<string,Marker>, GenotypeInfo>& PnAndMarkerToGenotype, String<string> firstLine, bool useFirstLine, bool enoughReads)
 AttributeLine parseNextLine(float winner, float second, bool is_gz, ifstream& attributeFile, io::filtering_istream& attributeFile_gz, Marker& marker, string PnId, map<Pair<string,Marker>, GenotypeInfo>& PnAndMarkerToGenotype, String<string> firstLine, bool useFirstLine, bool enoughReads)
 {
     PnAndMarkerToGenotype[Pair<string,Marker>(PnId, marker)].genotype = Pair<float>(winner,second);

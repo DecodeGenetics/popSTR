@@ -523,7 +523,7 @@ int main(int argc, char const ** argv)
             numberOfReads = lexicalCast<int>(numberOfWordsAndWords.i2[5]);
             winner = lexicalCast<float>(numberOfWordsAndWords.i2[7]);
             second = lexicalCast<float>(numberOfWordsAndWords.i2[8]);
-            if (numberOfReads >= 10)
+            if (numberOfReads >= 10 && markerToNallelesPSumSlippAndStutt.count(marker) != 0)
             {
                 append(modelDir, "/");
                 append(modelDir, marker.chrom);
@@ -538,9 +538,12 @@ int main(int argc, char const ** argv)
                 modelDir = options.modelDirectory;
             }
             else
-                markerToNallelesPSumSlippAndStutt[marker].i2[0] = -1.0;
+            {
+                if (markerToNallelesPSumSlippAndStutt.count(marker) != 0)
+                    markerToNallelesPSumSlippAndStutt[marker].i2[0] = -1.0;
+            }
         }
-        if (numberOfWordsAndWords.i1 == 11)
+        if (numberOfWordsAndWords.i1 == 11 && markerToNallelesPSumSlippAndStutt.count(marker) != 0)
         {
             if (numberOfReads >= 10)
             {
