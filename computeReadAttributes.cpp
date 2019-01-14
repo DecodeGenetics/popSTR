@@ -763,66 +763,28 @@ int main(int argc, char const ** argv)
     purityDemands[3] = Pair<float>(0.8,0.85);
     purityDemands[4] = Pair<float>(0.75,0.85);
     purityDemands[5] = Pair<float>(0.75,0.85);
-    // Setup name store, cache, and BAM I/O context.
-    typedef StringSet<CharString> TNameStore;
-    typedef NameStoreCache<TNameStore> TNameStoreCache;
-    typedef BamIOContext<TNameStore> TBamIOContext;
-    TNameStore nameStore;
-    TNameStoreCache nameStoreCache(nameStore);
-    TBamIOContext context(nameStore, nameStoreCache);
-
-    // Open BAM Stream for reading.
-    Stream<Bgzf> inStream;
-    if (!open(inStream, argv[1], "r"))
+    //Set up bam file and index for jumping to correct chromosome
+    CharString bamPathIn = argv[1], baiPathIn = argv[1];
+    BamFileIn bamFileIn;
+    open(bamFileIn, toCString(bamPathIn));
+    
+    int jumpStart = std::max(0,markers[0].STRstart - 2000);
+    int jumpEnd = jumpStart + 300000000;
+    append(baiPathIn,".bai");
+    if (!loadIndex(bamFileIn, toCString(baiPathIn)))
     {
-        cerr << "ERROR: Could not open " << argv[1] << " for reading.\n";
+        std::cerr << "ERROR: Could not read BAI index file " << baiPathIn << "\n";
         return 1;
     }
 
-    // Read header.
-    BamHeader header;
-    if (readRecord(header, context, inStream, Bam()) != 0)
+    if (!setRegion(bamFileIn, toCString(markers[0].chrom), jumpStart, jumpEnd))
     {
-        cerr << "ERROR: Could not read header from BAM file " << argv[1] << "\n";
-        return 1;
-    }
-
-    // Read BAI index.
-    BamIndex<Bai> baiIndex;
-    CharString indexPath = argv[1];
-    append(indexPath,".bai");
-    if (read(baiIndex, toCString(indexPath)) != 0)
-    {
-        cerr << "ERROR: Could not read BAI index file " << indexPath << "\n";
+        cerr << "ERROR: Could not jump to " << markers[0].chrom << ":" << 0 << "\n";
         return 1;
     }
 
     //Variables for the start and end coordinates of reads and their mates
     int bamStart, bamEnd, mateStart, mateEnd;
-
-    //Get rID of chromosome
-    int rID = 0;
-    if (!getIdByName(nameStore, markers[0].chrom, rID, nameStoreCache))
-    {
-        std::cerr << "ERROR: Reference sequence named " << markers[0].chrom << " not known.\n";
-        return 1;
-    }
-
-    //Jump to beginning of chromosome, put 100000000 as end to make sure I find alignments.
-    bool hasAlignments = false;
-    int jumpStart = std::max(0,markers[0].STRstart - 2000);
-    int jumpEnd = jumpStart + 100000000;
-    if (!jumpToRegion(inStream, hasAlignments, context, rID, jumpStart, jumpEnd, baiIndex))
-    {
-        cerr << "ERROR: Could not jump to " << markers[0].chrom << ":" << 0 << "\n";
-        return 1;
-    }
-    if (!hasAlignments)
-    {
-        //no alignments in interval
-        cout << "No alignments found!" << endl;
-        return 0;
-    }
 
     //Map from read name, marker chromosome and marker start to info on read-pair with that read name
     map<Triple<CharString, CharString, int>, ReadInfo> myMap;
@@ -832,13 +794,10 @@ int main(int argc, char const ** argv)
     unsigned numToLook;
     time_t now = time(0);
     cout << "Starting BAM-file processing: \n";
-    while (!atEnd(inStream))
+    while (readRegion(record, bamFileIn))
     {
-        if (readRecord(record, context, inStream, Bam()) != 0)
-        {
-            cerr << "ERROR: Could not read record from BAM file.\n";
-            return 1;
-        }
+        if (markerIndex % 10000==0 && markerIndex != 0)
+            cout << "Working on marker number: " << markerIndex << "\n";
         //If the read is a duplicate or doesn't pass the quality check I move on
         if (hasFlagQCNoPass(record) || hasFlagDuplicate(record))
             continue;
@@ -862,9 +821,7 @@ int main(int argc, char const ** argv)
             break;
         int currentMarker = markerIndex;
         numToLook = repeatNumbers[length(markers[currentMarker].motif)];
-        // At end or at next chromosome? -> done
-        if (record.rID == -1 || record.rID > rID)
-            break;
+        
         //Loop for comparing current read to all possible markers, could be useful for more than one marker
         while (true)
         {

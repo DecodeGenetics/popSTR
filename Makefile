@@ -1,19 +1,23 @@
 # include libraries
-SEQAN=/nfs/fs1/bioinfo/apps-x86_64/seqan-library/1.4.1
 BOOST=/nfs/fs1/bioinfo/apps-x86_64/boost/1.61.0
+HTSLIB=/nfs/prog/bioinfo/apps-x86_64/htslib/1.9
+SEQAN=/nfs/prog/bioinfo/apps-x86_64/SeqAnHTS/2018.11.28
 
 CXXFLAGS+=-I.
-#CXXFLAGS+=-isystem./seqan-library-1.4.1/include
 CXXFLAGS+=-isystem $(SEQAN)/include
-#CXXFLAGS+=-isystem /odinn/users/hannese/git/boost_1_61_0/build/include
+CXXFLAGS+=-I$(HTSLIB)/include
 CXXFLAGS+=-isystem $(BOOST)/include
+CXXFLAGS+=-pthread 
+CXXFLAGS+=-Wfatal-errors
 
-#LDFLAGS=-g -L/odinn/users/hannese/git/boost_1_61_0/build/lib -lz -lboost_iostreams
-LDFLAGS=-g -L$(BOOST)/lib -Wl,-rpath,$(BOOST)/lib -lz -lboost_iostreams
+LDFLAGS=-g -L$(HTSLIB)/lib -Wl,-rpath,$(HTSLIB)/lib -lz -lhts -L$(BOOST)/lib -Wl,-rpath,$(BOOST)/lib -lboost_iostreams
 
 # RELEASE build
 CXXFLAGS+=-O3 -DSEQAN_ENABLE_TESTING=0 -DSEQAN_ENABLE_DEBUG=0 -DSEQAN_HAS_ZLIB=1
-LDLIBS=-lz
+
+#Debug build
+#CXXFLAGS+=-O0 -DSEQAN_ENABLE_TESTING=0 -DSEQAN_ENABLE_DEBUG=1 -DSEQAN_HAS_ZLIB=1
+
 # set std to c++0x to allow using 'auto' etc.
 CXXFLAGS+=-std=c++0x
 

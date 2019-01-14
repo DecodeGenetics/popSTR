@@ -19,7 +19,6 @@
 #include <seqan/sequence.h>
 #include <seqan/arg_parse.h>
 #include <boost/iostreams/filtering_stream.hpp>
-#include <boost/iostreams/device/file.hpp>
 #include <boost/iostreams/copy.hpp>
 #include <boost/iostreams/filter/gzip.hpp>
 #include <liblinear-2.01/linear.h>
@@ -140,23 +139,23 @@ ArgumentParser::ParseResult parseCommandLine(MsGenotyperOptions & options, int a
     ArgumentParser parser("msGenotyperDefault");
     setShortDescription(parser, "Microsatellite genotyper");
     setVersion(parser, "1.3");
-    setDate(parser, "February 2016");
+    setDate(parser, "January 2019");
     addUsageLine(parser, "\\fI-ADCN\\fP attributesDirectory/chromNum \\fI-PNS\\fP pnSlippageFile \\fI-MS\\fP markerSlippageFile \\fI-VD\\fP vcfOutputDirectory \\fI-VN\\fP vcfFileName \\fI-R\\fP start end \\fI-I\\fP intervalIndex ");
     addDescription(parser, "This program performs genptyping on a per chromosome basis for all PNs in the pnSlippageFile given that it can find an attribute file for the PN. The genotypes are written to a file specified by the user.");
 
-    addOption(parser, ArgParseOption("ADCN", "attributesDirectory/chromNum", "Path to attributes files for the chromosome being genotyped.", ArgParseArgument::INPUTFILE, "IN-DIR"));
+    addOption(parser, ArgParseOption("ADCN", "attributesDirectory/chromNum", "Path to attributes files for the chromosome being genotyped.", ArgParseArgument::INPUT_FILE, "IN-DIR"));
     setRequired(parser, "attributesDirectory/chromNum");
 
-    addOption(parser, ArgParseOption("PNS", "pnSlippageFile", "A file containing slippage rates for the pns to be genotyped.", ArgParseArgument::INPUTFILE, "IN-FILE"));
+    addOption(parser, ArgParseOption("PNS", "pnSlippageFile", "A file containing slippage rates for the pns to be genotyped.", ArgParseArgument::INPUT_FILE, "IN-FILE"));
     setRequired(parser, "pnSlippageFile");
 
-    addOption(parser, ArgParseOption("MS", "markerSlippageFile", "A file containing slippage rates for the microsatellites.", ArgParseArgument::OUTPUTFILE, "OUT-FILE"));
+    addOption(parser, ArgParseOption("MS", "markerSlippageFile", "A file containing slippage rates for the microsatellites.", ArgParseArgument::OUTPUT_FILE, "OUT-FILE"));
     setRequired(parser, "markerSlippageFile");
 
-    addOption(parser, ArgParseOption("VD", "vcfOutputDirectory", "A directory to write the vcf file to.", ArgParseArgument::OUTPUTFILE, "OUT-DIR"));
+    addOption(parser, ArgParseOption("VD", "vcfOutputDirectory", "A directory to write the vcf file to.", ArgParseArgument::OUTPUT_FILE, "OUT-DIR"));
     setRequired(parser, "vcfOutputDirectory");
 
-    addOption(parser, ArgParseOption("VN", "vcfFileName", "Name of vcf output file.", ArgParseArgument::OUTPUTFILE, "OUT-FILE"));
+    addOption(parser, ArgParseOption("VN", "vcfFileName", "Name of vcf output file.", ArgParseArgument::OUTPUT_FILE, "OUT-FILE"));
     setRequired(parser, "vcfFileName");
 
     addOption(parser, ArgParseOption("R", "range", "The range to genotype.", ArgParseArgument::INTEGER, "BEGIN END", false, 2));
@@ -216,16 +215,16 @@ AttributeLine parseNextLine(float winner, float second, bool is_gz, ifstream& at
     currentLine.PnId = PnId;
     if (useFirstLine)
     {
-        currentLine.numOfRepeats = lexicalCast<float>(firstLine[0]);
-        currentLine.ratioBf = lexicalCast<float>(firstLine[1]);
-        currentLine.ratioAf = lexicalCast<float>(firstLine[2]);
-        currentLine.locationShift = lexicalCast<unsigned int>(firstLine[3]);
-        currentLine.mateEditDist = lexicalCast<unsigned int>(firstLine[4]);
-        currentLine.purity = lexicalCast<float>(firstLine[5]);
-        currentLine.ratioOver20In = lexicalCast<float>(firstLine[6]);
-        currentLine.ratioOver20After = lexicalCast<float>(firstLine[7]);
-        currentLine.sequenceLength = lexicalCast<unsigned int>(firstLine[8]);
-        currentLine.wasUnaligned = lexicalCast<bool>(firstLine[9]);
+        lexicalCast(currentLine.numOfRepeats, firstLine[0]);
+		lexicalCast(currentLine.ratioBf,firstLine[1]);
+		lexicalCast(currentLine.ratioAf,firstLine[2]);
+		lexicalCast(currentLine.locationShift,firstLine[3]);
+		lexicalCast(currentLine.mateEditDist,firstLine[4]);
+		lexicalCast(currentLine.purity,firstLine[5]);
+		lexicalCast(currentLine.ratioOver20In,firstLine[6]);
+		lexicalCast(currentLine.ratioOver20After,firstLine[7]);
+		lexicalCast(currentLine.sequenceLength,firstLine[8]);
+		currentLine.wasUnaligned = firstLine[9] == "1";
         currentLine.repSeq = firstLine[10];
     }
     else
@@ -590,12 +589,12 @@ unsigned getChrLength(string chrom)
 }
 
 //Write all sorts of info to the header of the vfc file I pass to the function
-void makeVcfHeader(VcfStream& out, String<string> PnIds, string chrom)
+void makeVcfHeader(VcfFileOut& out, String<string> PnIds, string chrom)
 {
-    appendValue(out.header.sequenceNames, chrom);
+    appendValue(contigNames(context(out)), chrom);
     //Add IDs of all PNs to the header
     for (unsigned i = 0; i<length(PnIds); ++i)
-        appendValue(out.header.sampleNames, PnIds[i]);
+        appendValue(sampleNames(context(out)), PnIds[i]);
     unsigned chromLength = getChrLength(chrom);
     string contigString = "<ID=" + chrom + ",length=" + to_string((long long unsigned int)chromLength) + ">";
     //Complicated way of getting todays date
@@ -606,20 +605,22 @@ void makeVcfHeader(VcfStream& out, String<string> PnIds, string chrom)
     timeinfo = localtime(&rawtime);
     strftime(buffer,10,"%Y%m%d",timeinfo);
     string date = buffer;
-    appendValue(out.header.headerRecords, VcfHeaderRecord("fileformat", "VCFv4.2"));
-    appendValue(out.header.headerRecords, VcfHeaderRecord("fileDate", date));
-    appendValue(out.header.headerRecords, VcfHeaderRecord("source", "PopSTR"));
-    appendValue(out.header.headerRecords, VcfHeaderRecord("source_bin", "/odinn/tmp/bjarnih/Genotyping/160205/bin/computeReadAttributes"));
-    appendValue(out.header.headerRecords, VcfHeaderRecord("source_bin", "/odinn/tmp/bjarnih/Genotyping/160205/bin/computePnSlippage"));
-    appendValue(out.header.headerRecords, VcfHeaderRecord("source_bin", "/odinn/tmp/bjarnih/Genotyping/160205/bin/msGenotyper"));
-    appendValue(out.header.headerRecords, VcfHeaderRecord("reference", "/odinn/data/reference/Homo_sapiens-deCODE-hg38/Sequence/WholeGenomeFasta/genome.fa"));
-    appendValue(out.header.headerRecords, VcfHeaderRecord("contig", contigString));
-    appendValue(out.header.headerRecords, VcfHeaderRecord("INFO", "<ID=RefLen,Number=A,Type=Integer,Description=\"Length of the reference allele\">"));
-    appendValue(out.header.headerRecords, VcfHeaderRecord("INFO", "<ID=Motif,Number=1,Type=String,Description=\"Microsatellite repeat motif\">"));
-    appendValue(out.header.headerRecords, VcfHeaderRecord("FORMAT", "<ID=GT,Number=1,Type=String,Description=\"Genotype\">"));
-    appendValue(out.header.headerRecords, VcfHeaderRecord("FORMAT", "<ID=AD,Number=R,Type=Integer,Description=\"Allelic depths for the ref and alt alleles in the order listed\">"));
-    appendValue(out.header.headerRecords, VcfHeaderRecord("FORMAT", "<ID=DP,Number=1,Type=Integer,Description=\"Approximate read depth\">"));
-    appendValue(out.header.headerRecords, VcfHeaderRecord("FORMAT", "<ID=PL,Number=G,Type=Integer,Description=\"PHRED-scaled genotype likelihoods\">"));
+    VcfHeader header;
+    appendValue(header, VcfHeaderRecord("fileformat", "VCFv4.2"));
+    appendValue(header, VcfHeaderRecord("fileDate", date));
+    appendValue(header, VcfHeaderRecord("source", "PopSTR"));
+    appendValue(header, VcfHeaderRecord("source_bin", "/odinn/tmp/bjarnih/Genotyping/160205/bin/computeReadAttributes"));
+    appendValue(header, VcfHeaderRecord("source_bin", "/odinn/tmp/bjarnih/Genotyping/160205/bin/computePnSlippage"));
+    appendValue(header, VcfHeaderRecord("source_bin", "/odinn/tmp/bjarnih/Genotyping/160205/bin/msGenotyper"));
+    appendValue(header, VcfHeaderRecord("reference", "/odinn/data/reference/Homo_sapiens-deCODE-hg38/Sequence/WholeGenomeFasta/genome.fa"));
+    appendValue(header, VcfHeaderRecord("contig", contigString));
+    appendValue(header, VcfHeaderRecord("INFO", "<ID=RefLen,Number=A,Type=Integer,Description=\"Length of the reference allele\">"));
+    appendValue(header, VcfHeaderRecord("INFO", "<ID=Motif,Number=1,Type=String,Description=\"Microsatellite repeat motif\">"));
+    appendValue(header, VcfHeaderRecord("FORMAT", "<ID=GT,Number=1,Type=String,Description=\"Genotype\">"));
+    appendValue(header, VcfHeaderRecord("FORMAT", "<ID=AD,Number=R,Type=Integer,Description=\"Allelic depths for the ref and alt alleles in the order listed\">"));
+    appendValue(header, VcfHeaderRecord("FORMAT", "<ID=DP,Number=1,Type=Integer,Description=\"Approximate read depth\">"));
+    appendValue(header, VcfHeaderRecord("FORMAT", "<ID=PL,Number=G,Type=Integer,Description=\"PHRED-scaled genotype likelihoods\">"));
+    writeHeader(out, header);
 }
 
 //Clear a stringstream and a string, I use this a lot in fillRecordMarker/Pn so a function seemed appropriate
@@ -1017,8 +1018,7 @@ int main(int argc, char const ** argv)
     //Map to store current genotype(and lots of other things) of a person for each marker maps from pnId and Marker-struct to GenotypeInfo struct
     map<Pair<string,Marker>, GenotypeInfo> PnAndMarkerToGenotype;
 
-    //Open vcf stream and make header if the estimateMarkerSlippage switch is off
-    VcfStream out;
+    //Open vcf stream
     CharString outputDirectory = options.vcfOutputDirectory;
     CharString outputFileName = options.vcfFileName;
     append(outputDirectory, "/");
@@ -1026,12 +1026,8 @@ int main(int argc, char const ** argv)
     append(outputDirectory, "_");
     append(outputDirectory, intervalIndex);
     append(outputDirectory, ".vcf");
-    bool outOk = open(out,toCString(outputDirectory), VcfStream::WRITE);
-    if (!outOk)
-    {
-        cerr << "Cannot create vcf file at: " << outputDirectory << endl;
-        return 1;
-    }
+    ofstream outputFile(toCString(outputDirectory));
+    VcfFileOut out(outputFile, Vcf());
 
     Marker marker;
     string nextLine;
@@ -1045,25 +1041,25 @@ int main(int argc, char const ** argv)
     {
         PnId = pnStart->first;
         append(attributePath, PnId);
-        ++nProcessedPns;
-        if (nProcessedPns % 1000==0)
-            cout << "Working on pn number: " << nProcessedPns << endl;
-        
         bool is_gz = false;
         io::filtering_istream attributeFile_gz;
         ifstream attributeFile;
-        
         if (!ifstream(toCString(attributePath)))
         {
             is_gz = true;
             append(attributePath, ".gz");
-            io::file_source attributeFileGz(toCString(attributePath), std::ios_base::in | std::ios_base::binary);
+            std::ifstream attributeFileGz(toCString(attributePath), std::ios_base::in | std::ios_base::binary);
             attributeFile_gz.push(io::gzip_decompressor());
             attributeFile_gz.push(attributeFileGz);
+            std::getline (attributeFile_gz, nextLine);
+            //cout << nextLine << "\n";
+            appendValue(PnIds,nextLine);
         }
         else
             attributeFile.open(toCString(attributePath));
-            
+        ++nProcessedPns;
+        if (nProcessedPns % 1000==0)
+            cout << "Working on pn number: " << nProcessedPns << endl;
         while (is_gz ? std::getline (attributeFile_gz, nextLine) : std::getline (attributeFile, nextLine))
         {
             if (nextLine.length() == 0)
@@ -1077,11 +1073,11 @@ int main(int argc, char const ** argv)
             if (numberOfWordsAndWords.i1 == 9)
             {
                 marker.chrom = numberOfWordsAndWords.i2[0];
-                marker.start = lexicalCast<int>(numberOfWordsAndWords.i2[1]);
-                marker.end = lexicalCast<int>(numberOfWordsAndWords.i2[2]);
+                lexicalCast(marker.start,numberOfWordsAndWords.i2[1]);
+                lexicalCast(marker.end,numberOfWordsAndWords.i2[2]);
                 marker.motif = numberOfWordsAndWords.i2[3];
-                marker.refRepeatNum = lexicalCast<float>(numberOfWordsAndWords.i2[4]);
-                numberOfReads = lexicalCast<int>(numberOfWordsAndWords.i2[5]);
+                lexicalCast(marker.refRepeatNum,numberOfWordsAndWords.i2[4]);
+                lexicalCast(numberOfReads,numberOfWordsAndWords.i2[5]);
                 marker.refRepSeq = numberOfWordsAndWords.i2[6];
                 //If I am in front of the interval, I move to the next marker.
                 if (marker.start < startCoord)
@@ -1103,8 +1099,8 @@ int main(int argc, char const ** argv)
                     break;
                 //Otherwise the marker is in the interval and I process it.
                 markers.insert(marker);
-                winner = lexicalCast<float>(numberOfWordsAndWords.i2[7]);
-                second = lexicalCast<float>(numberOfWordsAndWords.i2[8]);
+                lexicalCast(winner,numberOfWordsAndWords.i2[7]);
+                lexicalCast(second,numberOfWordsAndWords.i2[8]);
                 markerToAlleles[marker].insert(winner);
                 markerToAlleles[marker].insert(second);
             }
@@ -1394,8 +1390,7 @@ int main(int argc, char const ** argv)
         record.filter = ".";
         stringClear(ss,str);
         //After adding info for all PNs at thisMarker I write the record to the vcf output file
-        if (writeRecord(out, record) != 0)
-            cerr << "ERROR: Problem writing VCF-output file." << endl;
+        writeRecord(out, record);
         clear(record);
         markerToAlleleFreqs[thisMarker].i2 = PnsAtMarker;
         PnToAlleles.clear();
