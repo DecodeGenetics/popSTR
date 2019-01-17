@@ -26,7 +26,7 @@ struct STRinfo {
     Dna5String refBf;
     Dna5String refAf;
     Dna5String refRepSeq;
-    double refRepPurity;
+    float refRepPurity;
     unsigned minFlankLeft;
     unsigned minFlankRight;
 } ;
@@ -231,22 +231,30 @@ Pair<Pair<int>, int> findPattern(Dna5String & pattern, Dna5String & readSequence
 //Compute the actual number of repeats/expected number of repeats based on length
 float getPurity(Dna5String & motif, Dna5String STRsequence)
 {
+    //cout << "getPurity( " << motif << "," << STRsequence << ")\n";
     unsigned motifLength = length(motif);
-    float expectReps = (float)length(STRsequence)/(float)motifLength;
+    unsigned expectReps = length(STRsequence)/motifLength;
     unsigned result = 0;
     unsigned index = 0;
-    while(index < length(STRsequence))
+    while(index+motifLength <= length(STRsequence))
     {
         Dna5String theSubString = infixWithLength(STRsequence, index, motifLength);
+        //cout << "Checking: " << theSubString << "\n";
         if (theSubString == motif)
         {
+            //cout << "It matches!\n"; 
             result++;
             index = index + motifLength;
         }
         else
+        {
+            //cout << "It doesn't match\n"; 
             index = index + 1;
+        }
     }
-    return (float)result/(float)expectReps;
+    //cout << "Expected repeats: " << expectReps << "\n";
+    //cout << "Found repeats: " << result << "\n";
+    return min (1.0f, (float)result/(float)expectReps);
 }
 
 //Finds ratio of bases in a sequence with PHRED score higher than 20
@@ -378,6 +386,7 @@ Pair<Triple<CharString, CharString, int>,ReadInfo> computeReadInfo(BamAlignmentR
     /*bool debug = true;
     if (debug)
     {
+        int flankSum = leftFlank + rightFlank;
         cout << "FlankSum: " << flankSum << " leftFlank: " << leftFlank << " rightFlank: " << rightFlank << endl;
         if (leftFlank > 0)
             cout << "AlignmentScore before: " << (float)scoreBf/(float)startCoord << endl;
@@ -388,9 +397,10 @@ Pair<Triple<CharString, CharString, int>,ReadInfo> computeReadInfo(BamAlignmentR
         cout << "End coord: " << endCoord << endl;
         cout << "Infix command is: infix(" << startCoord << "," << oldStartCoord+endCoord+1 << ")" << endl;
         //cout << "Repeat purity: " << getPurity(markerInfo.motif,infix(record.seq, startCoord, oldStartCoord+endCoord+1)) << endl;
+        cout << "Call to getPurity is getPurity(" << markerInfo.motif << "," << markerInfo.refRepSeq << ")" << "\n";
         cout << "Reference repeat purity: " << getPurity(markerInfo.motif, markerInfo.refRepSeq) << endl;
     }*/
-    double refRepPurity = markerInfo.refRepPurity;
+    float refRepPurity = markerInfo.refRepPurity;
     bool startOk = false;
     bool endOk = false;
     bool purityOk = false;
@@ -449,8 +459,11 @@ Pair<Triple<CharString, CharString, int>,ReadInfo> computeReadInfo(BamAlignmentR
         mapValue.repSeq = repeatRegion;
         mapValue.locationShift = 100;
         return Pair<Triple<CharString, CharString, int>,ReadInfo>(mapKey,mapValue);
-    }
-    double readPurity = getPurity(markerInfo.motif,infix(record.seq, startCoord, oldStartCoord+endCoord+1));
+    } 
+    float readPurity = getPurity(markerInfo.motif,infix(record.seq, startCoord, oldStartCoord+endCoord+1));
+    /*cout << "Read purity: " << readPurity << "\n";
+    cout << "Reference purity: " << refRepPurity << "\n";
+    cout << "Purity minimum: " << purityDemands[motifLength-1].i1 << "*" << refRepPurity << "=" << purityDemands[motifLength-1].i1*refRepPurity << "\n";*/
     if (readPurity <= purityDemands[motifLength-1].i1*refRepPurity)
     {
         //cout << "Failing read purity check" << endl;
@@ -500,6 +513,7 @@ Pair<Triple<CharString, CharString, int>,ReadInfo> computeReadInfo(BamAlignmentR
         mapValue.numOfRepeats = (float)maxRepeatLength/(float)length(markerInfo.motif);
         mapValue.ratioOver20In = findRatioOver20(infix(qualString, coordinates.i1.i1, oldStartCoord+coordinates.i1.i2+1));
         mapValue.ratioOver20After = findRatioOver20(suffix(suffix(qualString, oldStartCoord),coordinates.i1.i2+1));
+        //cout << "getPurity( " << markerInfo.motif << "," << infix(record.seq, startCoord, oldStartCoord+endCoord+1) << ")\n";
         mapValue.purity = getPurity(markerInfo.motif,repeatRegion);
     }
     else
@@ -957,8 +971,12 @@ int main(int argc, char const ** argv)
     {
         //If this condition holds then only one member of the read pair has fulfilled the conditions and I can't use the pair.
         if ((it->second.numOfRepeats == 666) || (it->second.mateEditDist == 666))
+        {
+            //cout << "No: " << it->first.i1 << " "<< it->first.i2 << " " << it->first.i3 << "\n";
             continue;
+        }
         //Create key
+        //cout << "Yes: " << it->first.i1 << " "<< it->first.i2 << " " << it->first.i3 << "\n";
         STRinfoSmall currentSTR;
         currentSTR.chrom = it->first.i2;
         currentSTR.STRstart = it->first.i3;
