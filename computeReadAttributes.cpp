@@ -242,18 +242,14 @@ float getPurity(Dna5String & motif, Dna5String STRsequence)
         //cout << "Checking: " << theSubString << "\n";
         if (theSubString == motif)
         {
-            //cout << "It matches!\n"; 
             result++;
             index = index + motifLength;
         }
         else
         {
-            //cout << "It doesn't match\n"; 
             index = index + 1;
         }
     }
-    //cout << "Expected repeats: " << expectReps << "\n";
-    //cout << "Found repeats: " << result << "\n";
     return min (1.0f, (float)result/(float)expectReps);
 }
 
@@ -459,8 +455,9 @@ Pair<Triple<CharString, CharString, int>,ReadInfo> computeReadInfo(BamAlignmentR
         mapValue.repSeq = repeatRegion;
         mapValue.locationShift = 100;
         return Pair<Triple<CharString, CharString, int>,ReadInfo>(mapKey,mapValue);
-    } 
+    }
     float readPurity = getPurity(markerInfo.motif,infix(record.seq, startCoord, oldStartCoord+endCoord+1));
+    unsigned startCoord1 = startCoord, endCoord1 = oldStartCoord+endCoord+1;
     /*cout << "Read purity: " << readPurity << "\n";
     cout << "Reference purity: " << refRepPurity << "\n";
     cout << "Purity minimum: " << purityDemands[motifLength-1].i1 << "*" << refRepPurity << "=" << purityDemands[motifLength-1].i1*refRepPurity << "\n";*/
@@ -514,7 +511,10 @@ Pair<Triple<CharString, CharString, int>,ReadInfo> computeReadInfo(BamAlignmentR
         mapValue.ratioOver20In = findRatioOver20(infix(qualString, coordinates.i1.i1, oldStartCoord+coordinates.i1.i2+1));
         mapValue.ratioOver20After = findRatioOver20(suffix(suffix(qualString, oldStartCoord),coordinates.i1.i2+1));
         //cout << "getPurity( " << markerInfo.motif << "," << infix(record.seq, startCoord, oldStartCoord+endCoord+1) << ")\n";
-        mapValue.purity = getPurity(markerInfo.motif,repeatRegion);
+        if (startCoord1!=coordinates.i1.i1 || endCoord1 != oldStartCoord+coordinates.i1.i2+1)
+            mapValue.purity = getPurity(markerInfo.motif,repeatRegion);
+        else
+            mapValue.purity = readPurity;
     }
     else
     {
@@ -530,7 +530,10 @@ Pair<Triple<CharString, CharString, int>,ReadInfo> computeReadInfo(BamAlignmentR
             mapValue.numOfRepeats = (float)maxRepeatLength/(float)length(markerInfo.motif);
             mapValue.ratioOver20In = findRatioOver20(infix(qualString, coordinates.i1.i1, oldStartCoord+coordinates.i1.i2+1));
             mapValue.ratioOver20After = 0;
-            mapValue.purity = getPurity(markerInfo.motif,repeatRegion);
+            if (startCoord1!=coordinates.i1.i1 || endCoord1 != oldStartCoord+coordinates.i1.i2+1)
+                mapValue.purity = getPurity(markerInfo.motif,repeatRegion);
+            else
+                mapValue.purity = readPurity;
         }
         else
         {
@@ -546,7 +549,10 @@ Pair<Triple<CharString, CharString, int>,ReadInfo> computeReadInfo(BamAlignmentR
                 mapValue.numOfRepeats = (float)maxRepeatLength/(float)length(markerInfo.motif);
                 mapValue.ratioOver20In = findRatioOver20(record.seq);
                 mapValue.ratioOver20After = 0.0;
-                mapValue.purity = getPurity(markerInfo.motif,repeatRegion);
+                if (length(repeatRegion) != length(infix(record.seq, startCoord1, endCoord1)))
+                    mapValue.purity = getPurity(markerInfo.motif,repeatRegion);
+                else
+                    mapValue.purity = readPurity;
             }
             else
             {
@@ -571,7 +577,10 @@ Pair<Triple<CharString, CharString, int>,ReadInfo> computeReadInfo(BamAlignmentR
                     }
                     mapValue.ratioOver20In = findRatioOver20(infix(qualString, coordinates.i1.i1, oldStartCoord+coordinates.i1.i2+1));
                     mapValue.ratioOver20After = findRatioOver20(suffix(suffix(qualString, oldStartCoord),coordinates.i1.i2+1));
-                    mapValue.purity = getPurity(markerInfo.motif,repeatRegion);
+                    if (startCoord1 != coordinates.i1.i1 || endCoord1 != oldStartCoord+coordinates.i1.i2+1)
+                        mapValue.purity = getPurity(markerInfo.motif,repeatRegion);
+                    else
+                        mapValue.purity = readPurity;
                     //cout << "Processed read: " << record.qName << " into map and reported: " << mapValue.numOfRepeats << ".\n";
                 }
                 //Otherwise I can't use the read so I set numOfRepeats to 666
@@ -701,16 +710,17 @@ String<STRinfo> readMarkerinfo(CharString & markerInfoFile, int minFlank)
         string refBfString;
         markerFile >> refBfString;
         currInfo.refBf = refBfString;
-        string refAfString;
+        string refAfString; 
         markerFile >> refAfString;
         currInfo.refAf = refAfString;
         string refRepSeq;
         markerFile >> refRepSeq;
         currInfo.refRepSeq = refRepSeq;
-        currInfo.refRepeatNum = (float)refRepSeq.length()/(float)motifString.length();
-        currInfo.refRepPurity = getPurity(currInfo.motif, currInfo.refRepSeq);
+        currInfo.refRepeatNum = (float)refRepSeq.length()/(float)motifString.length();        
+        //currInfo.refRepPurity = getPurity(currInfo.motif, currInfo.refRepSeq);
         markerFile >> currInfo.minFlankLeft;
         markerFile >> currInfo.minFlankRight;
+        markerFile >> currInfo.refRepPurity;
         appendValue(markers, currInfo);
     }
     return markers;
@@ -742,7 +752,7 @@ int main(int argc, char const ** argv)
     struct stat st2;
     if (stat(toCString(attributeDirectory),&st2) != 0)
     {
-        cerr << "Output directory does not exist: " << attributeDirectory << endl;
+        cerr << "Output directory does not exist: " << attributeDirectory << "\n";
         return 1;
     }
     append(attributeDirectory, "/attributes/");
@@ -810,8 +820,6 @@ int main(int argc, char const ** argv)
     cout << "Starting BAM-file processing: \n";
     while (readRegion(record, bamFileIn))
     {
-        if (markerIndex % 10000==0 && markerIndex != 0)
-            cout << "Working on marker number: " << markerIndex << "\n";
         //If the read is a duplicate or doesn't pass the quality check I move on
         if (hasFlagQCNoPass(record) || hasFlagDuplicate(record))
             continue;
@@ -829,6 +837,8 @@ int main(int argc, char const ** argv)
             //If the markerIndex has exceeded the length of the marker string I can't check the while condition (markers[markerIndex].STRend doesn't exist) so I break
             if (markerIndex > length(markers)-1)
                 break;
+            if (markerIndex % 10000==0 && markerIndex != 0)
+                cout << "Working on marker number: " << markerIndex << "\n";
         }
         //If the markerIndex has exceeded the length of the marker string I break the BAM-reading loop
         if(markerIndex > length(markers)-1)
