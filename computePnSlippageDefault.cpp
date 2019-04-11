@@ -31,6 +31,7 @@ struct LabelProps {
     double p1;
     double p2;
     double p3;
+    int nMarkers;
 } ;
 
 //For storing marker information
@@ -66,11 +67,18 @@ struct GenotypeInfo {
     double pValueSum;
 } ;
 
-//For storing command line arguments
-struct ComputePnSlippageOptions
+//For storing marker values
+struct MarkerStats
 {
-    CharString attDirChromNumPN, outputFile, markerSlippageFile, modelDirectory;
-} ;
+    model* regressionModel;
+    double pSum;
+    double slippage;
+    unsigned nAlleles;
+    double stutter;
+    double stepSum;
+    double fullMotifSlippageSum;
+    unsigned nPns;
+};
 
 //So I can map from Markers
 bool operator<(const Marker & left, const Marker & right)
@@ -78,40 +86,47 @@ bool operator<(const Marker & left, const Marker & right)
     return left.start < right.start;
 }
 
-//Sums the pValues of reads at every marker, also stores the current slippage rate value for each marker
-map<Marker, Pair<int, String<double> > > markerToNallelesPSumSlippAndStutt;
-
-//Stores the logistic regression model definition for each marker, is cleared for each chromosome
-map<Marker, model*> markerToModel;
-
-//Stores number of pns used in estimating marker slippage for each marker
-map<Marker, int> markerToNpns;
+//stores various marker specific values
+map<Marker, MarkerStats> markerToStats;
 
 //Store AttributeLine for all reads
-map<Marker, String<AttributeLine> > markerToReads;
+map<Pair<string, Marker>, String<AttributeLine> > markerAndPnToReads;
 
 //Store alleles at each marker
 map<Marker, Pair<std::set<float>, String<Pair<float> >> > markerToAllelesAndGenotypes;
 
+//For storing command line arguments
+struct ComputePnSlippageOptions
+{
+    CharString pnList, attributesDirectory, outputFile, markerSlippageFile, modelDirectory;
+    unsigned firstPnIdx;
+} ;
+
 ArgumentParser::ParseResult parseCommandLine(ComputePnSlippageOptions & options, int argc, char const ** argv)
 {
     ArgumentParser parser("computePnSlippageDefault");
-    setShortDescription(parser, "Compute individual specific slippage rate for a single individual.");
-    setVersion(parser, "1.3");
-    setDate(parser, "October 2016");
-    addUsageLine(parser, "\\fI-AF\\fP attributesDirectory/chromNum/PN-ID \\fI-OF\\fP outputFile \\fI-MS\\fP markerSlippageFile \\fI-MD\\fP modelDirectory ");
-    addDescription(parser, "This program will estimate an individual specific slipppage rate for the individual specified based on the marker slippage rates and models specified.");
+    setShortDescription(parser, "Compute individual specific slippage rate for the provided individuals.");
+    setVersion(parser, "1.4");
+    setDate(parser, "April 2019");
+    addUsageLine(parser, "\\fI-PL\\fP pnList \\fI-AD\\fP attributesDirectory \\fI-OF\\fP outputFile \\fI-FP\\fP firstPnIdx \\fI-MS\\fP markerSlippageFile \\fI-MD\\fP regressionModelDirectory");
+    addDescription(parser, "This program will estimate an individual specific slipppage rate for the individuals specified based on the marker slippage rates and models provided.");
 
-    addOption(parser, ArgParseOption("AF", "attributesDirectory/chromNum/PN-ID", "Path to attributes file for the individual to estimate a slippage rate for.", ArgParseArgument::INPUTFILE, "IN-FILE"));
-    setRequired(parser, "attributesDirectory/chromNum/PN-ID");
+    addOption(parser, ArgParseOption("PL", "pnList", "A list of PNs whose slippage will be estimated.", ArgParseArgument::INPUT_FILE, "IN-FILE"));
+    setRequired(parser, "pnList");
 
-    addOption(parser, ArgParseOption("OF", "outputFile", "The slippage rate estimated will be appended to this file.", ArgParseArgument::INPUTFILE, "OUT-FILE"));
+    addOption(parser, ArgParseOption("AF", "attributesDirectory", "Path to attributes file for the individual to estimate a slippage rate for.", ArgParseArgument::INPUT_FILE, "IN-FILE"));
+    setRequired(parser, "attributesDirectory");
+
+    addOption(parser, ArgParseOption("OF", "outputFile", "The slippage rate estimated will be appended to this file.", ArgParseArgument::INPUT_FILE, "OUT-FILE"));
     setRequired(parser, "outputFile");
 
-    addOption(parser, ArgParseOption("MS", "markerSlippageFile", "A file containing slippage rates for the microsatellites.", ArgParseArgument::OUTPUTFILE, "OUT-FILE"));
+    addOption(parser, ArgParseOption("FP", "firstPnIdx", "Index of first Pn in pnList within the attributeFile.", ArgParseArgument::INTEGER, "INTEGER"));
+    setRequired(parser, "firstPnIdx");
+
+    addOption(parser, ArgParseOption("MS", "markerSlippageFile", "A file containing slippage rates for the microsatellites.", ArgParseArgument::OUTPUT_FILE, "OUT-FILE"));
     setRequired(parser, "markerSlippageFile");
 
-    addOption(parser, ArgParseOption("MD", "modelDirectory", "A directory where logistic regression models for all markers in the markerSlippageFile are stored.", ArgParseArgument::OUTPUTFILE, "IN-DIR"));
+    addOption(parser, ArgParseOption("MD", "modelDirectory", "A directory where logistic regression models for all markers in the markerSlippageFile are stored.", ArgParseArgument::OUTPUT_FILE, "IN-DIR"));
     setRequired(parser, "modelDirectory");
 	
 	ArgumentParser::ParseResult res = parse(parser, argc, argv);
@@ -119,10 +134,13 @@ ArgumentParser::ParseResult parseCommandLine(ComputePnSlippageOptions & options,
 	if (res != ArgumentParser::PARSE_OK)
 	    return res;
 	
-	getOptionValue(options.attDirChromNumPN, parser, "attributesDirectory/chromNum/PN-ID");
+    getOptionValue(options.pnList, parser, "pnList");
+    getOptionValue(options.attributesDirectory, parser, "attributesDirectory");
 	getOptionValue(options.outputFile, parser, "outputFile");
+    getOptionValue(options.firstPnIdx, parser, "firstPnIdx"); 
 	getOptionValue(options.markerSlippageFile, parser, "markerSlippageFile");
 	getOptionValue(options.modelDirectory, parser, "modelDirectory");
+
 
 	return ArgumentParser::PARSE_OK;
 }
@@ -152,10 +170,11 @@ void fillProblemX(int idx, AttributeLine currentLine, problem& myProb)
     myProb.x[idx][9].value = 0;
 }
 
-void readMarkerSlippage(ifstream& markerSlippageFile)
+void readMarkerSlippage(ifstream& markerSlippageFile, CharString regressionModelDirectory)
 {
     Marker currMarker;
     string tempVal;
+    CharString currMarkerModelDir = regressionModelDirectory;
     while (!markerSlippageFile.eof())
     {
         markerSlippageFile >> currMarker.chrom;
@@ -164,12 +183,18 @@ void readMarkerSlippage(ifstream& markerSlippageFile)
         markerSlippageFile >> currMarker.motif;
         markerSlippageFile >> tempVal;
         markerSlippageFile >> tempVal;
-        resize(markerToNallelesPSumSlippAndStutt[currMarker].i2,3);
-        markerToNallelesPSumSlippAndStutt[currMarker].i2[0] = -1.0;
-        markerSlippageFile >> markerToNallelesPSumSlippAndStutt[currMarker].i2[1];
-        markerSlippageFile >> markerToNpns[currMarker];
-        markerSlippageFile >> markerToNallelesPSumSlippAndStutt[currMarker].i1;
-        markerSlippageFile >> markerToNallelesPSumSlippAndStutt[currMarker].i2[2];
+        markerToStats[currMarker].pSum = -1.0;
+        markerSlippageFile >> markerToStats[currMarker].slippage; //marker slippage rate
+        markerSlippageFile >> markerToStats[currMarker].nPns; //how many pns available to estimate the marker slippage
+        markerSlippageFile >> markerToStats[currMarker].nAlleles; //read number of alleles
+        markerSlippageFile >> markerToStats[currMarker].stutter; //marker stutter rate
+        append(currMarkerModelDir, "/model_");
+        append(currMarkerModelDir, to_string(currMarker.start));
+        append(currMarkerModelDir, "_");
+        append(currMarkerModelDir, currMarker.motif);
+        const char *model_in_file = toCString(currMarkerModelDir);
+        markerToStats[currMarker].regressionModel = load_model(model_in_file);
+        currMarkerModelDir = regressionModelDirectory;
     }
     cout << "Finished reading marker slippage." << endl;
 }
@@ -208,7 +233,7 @@ Pair<int, String<string> > countNumberOfWords(string sentence)
 double getPval(Marker marker, AttributeLine currentLine)
 {
     double predict_label;
-    model* model_ = markerToModel[marker];
+    model* model_ = markerToStats[marker].regressionModel;
     double *prob_estimates = (double *) malloc(2*sizeof(double));
     problem prob;
     prob.bias = -1;
@@ -222,43 +247,26 @@ double getPval(Marker marker, AttributeLine currentLine)
 }
 
 //Parses one line from attribute file by filling up and returning an AttributeLine, also initializes markerToSizeAndModel map using the labels
-AttributeLine parseNextLine(float winner, float second, ifstream& attributeFile, Marker& marker, String<string> firstLine, bool useFirstLine, LabelProps& slippCount)
+AttributeLine parseNextLine(float winner, float second, ifstream& attributeFile, Marker& marker, map<string, LabelProps>& pnToLabelProps, string pnId)
 {
     AttributeLine currentLine;
     string temp;
-    if (useFirstLine)
-    {
-        currentLine.numOfRepeats = lexicalCast<float>(firstLine[0]);
-        currentLine.ratioBf = lexicalCast<float>(firstLine[1]);
-        currentLine.ratioAf = lexicalCast<float>(firstLine[2]);
-        currentLine.locationShift = lexicalCast<unsigned int>(firstLine[3]);
-        currentLine.mateEditDist = lexicalCast<unsigned int>(firstLine[4]);
-        currentLine.purity = lexicalCast<float>(firstLine[5]);
-        currentLine.ratioOver20In = lexicalCast<float>(firstLine[6]);
-        currentLine.ratioOver20After = lexicalCast<float>(firstLine[7]);
-        currentLine.sequenceLength = lexicalCast<unsigned int>(firstLine[8]);
-        currentLine.wasUnaligned = lexicalCast<bool>(firstLine[9]);
-        markerToNallelesPSumSlippAndStutt[marker].i2[0] = 0; //Have to set this sum to 0 before I start adding to it.
-    }
-    else
-    {
-        attributeFile >> currentLine.numOfRepeats;
-        attributeFile >> currentLine.ratioBf;
-        attributeFile >> currentLine.ratioAf;
-        attributeFile >> currentLine.locationShift;
-        attributeFile >> currentLine.mateEditDist;
-        attributeFile >> currentLine.purity;
-        attributeFile >> currentLine.ratioOver20In;
-        attributeFile >> currentLine.ratioOver20After;
-        attributeFile >> currentLine.sequenceLength;
-        attributeFile >> currentLine.wasUnaligned;
-        attributeFile >> temp;
-    }
+    attributeFile >> currentLine.numOfRepeats;
+    attributeFile >> currentLine.ratioBf;
+    attributeFile >> currentLine.ratioAf;
+    attributeFile >> currentLine.locationShift;
+    attributeFile >> currentLine.mateEditDist;
+    attributeFile >> currentLine.purity;
+    attributeFile >> currentLine.ratioOver20In;
+    attributeFile >> currentLine.ratioOver20After;
+    attributeFile >> currentLine.sequenceLength;
+    attributeFile >> currentLine.wasUnaligned;
+    attributeFile >> temp;
     currentLine.pValue = getPval(marker, currentLine);
-    markerToNallelesPSumSlippAndStutt[marker].i2[0] += currentLine.pValue;
+    markerToStats[marker].pSum += currentLine.pValue;
     if (currentLine.numOfRepeats == winner || currentLine.numOfRepeats == second)
     {
-        slippCount.p1 += currentLine.pValue;
+        pnToLabelProps[pnId].p1 += currentLine.pValue;
         currentLine.label = 1;
     }
     else
@@ -266,48 +274,48 @@ AttributeLine parseNextLine(float winner, float second, ifstream& attributeFile,
         float diff1 = fabs(currentLine.numOfRepeats - winner), diff2 = fabs(currentLine.numOfRepeats - second);
         if (std::min(diff1,diff2)>=0.9) //full motif slippage
         {
-            slippCount.p2 += currentLine.pValue;
+            pnToLabelProps[pnId].p2 += currentLine.pValue;
             currentLine.label = 2;
         }
         else //stutter
         {
-            slippCount.p3 += currentLine.pValue;
+            pnToLabelProps[pnId].p3 += currentLine.pValue;
             currentLine.label = 3;
         }
     }
     return currentLine;
 }
 
-double estimateSlippage(double current_sp)
+double estimateSlippage(double current_sp, string pnId)
 {
     vector<double> weights;
     vector<double> slippFragments;
     double currMarkSlipp, currPvalSum, weightSum = 0, fullMotifSlippageSum = 0;
-    map<Marker, Pair<int, String<double> > >::const_iterator markerEnd =  markerToNallelesPSumSlippAndStutt.end();
-    for (map<Marker, Pair<int, String<double> > >::iterator markerStart =  markerToNallelesPSumSlippAndStutt.begin(); markerStart != markerEnd; ++markerStart)
+    for (auto& marker: markerToStats)
     {
-        if ( markerStart->second.i2[0] == -1.0)
+        if ( marker.second.pSum == -1.0)
             continue;
-        if (markerStart->second.i2[1] == 0)
+        if (marker.second.slippage == 0)
             currMarkSlipp = 0.001;
         else
-            currMarkSlipp = markerStart->second.i2[1];
-        currPvalSum = markerStart->second.i2[0];
+            currMarkSlipp = marker.second.slippage;
+        currPvalSum = marker.second.pSum;
         weights.push_back(currPvalSum/((current_sp+currMarkSlipp)*(1-(current_sp+currMarkSlipp))));
     }
     weightSum = accumulate(weights.begin(),weights.end(),0.0);
     unsigned index = 0;
-    for (map<Marker, Pair<int, String<double> > >::iterator markerStart =  markerToNallelesPSumSlippAndStutt.begin(); markerStart != markerEnd; ++markerStart)
+    for (auto& marker: markerToStats)
     {
-        if ( markerStart->second.i2[0] == -1.0)
+        if ( marker.second.pSum == -1.0)
             continue;
-        String<AttributeLine> readsAtI = markerToReads[markerStart->first];
+        Pair<string, Marker> mapKey = Pair<string, Marker>(pnId, marker.first); 
+        String<AttributeLine> readsAtI = markerAndPnToReads[mapKey];
         for (unsigned i=0; i<length(readsAtI); ++i)
         {
             if (readsAtI[i].label == 2)
                 fullMotifSlippageSum += readsAtI[i].pValue;
         }
-        slippFragments.push_back((weights[index]/weightSum)*((fullMotifSlippageSum/markerStart->second.i2[0]) - markerStart->second.i2[1]));
+        slippFragments.push_back((weights[index]/weightSum)*((fullMotifSlippageSum/marker.second.pSum) - marker.second.slippage));
         fullMotifSlippageSum = 0;
         ++index;
     }
@@ -452,22 +460,142 @@ bool determineGenotype(String<AttributeLine>& reads, double s_ij, String<Pair<fl
     }
 }
 
-int updateGenotypes(double current_sp)
+int updateGenotypes(double current_sp, string pnId)
 {
     int nChanged = 0;
     bool changed;
     String<Pair<float> > genotypes;
-    map<Marker, Pair<int, String<double> > >::const_iterator markerEnd =  markerToNallelesPSumSlippAndStutt.end();
-    for (map<Marker, Pair<int, String<double> > >::iterator markerStart =  markerToNallelesPSumSlippAndStutt.begin(); markerStart != markerEnd; ++markerStart)
+    for (auto& marker: markerToStats)
     {
-        if ( markerStart->second.i2[0] == -1.0)
+        if ( marker.second.pSum == -1.0)
             continue;
-        genotypes = markerToAllelesAndGenotypes[markerStart->first].i2;
-        changed = determineGenotype(markerToReads[markerStart->first], current_sp+markerStart->second.i2[1], genotypes, markerStart->second.i1, markerStart->first.motif.size(), markerStart->second.i2[2]);
+        genotypes = markerToAllelesAndGenotypes[marker.first].i2;
+        Pair<string, Marker> mapKey = Pair<string, Marker>(pnId, marker.first);
+        changed = determineGenotype(markerAndPnToReads[mapKey], current_sp+marker.second.slippage, genotypes, marker.second.nAlleles, marker.first.motif.size(), marker.second.stutter);
         if (changed)
             ++nChanged;
     }
     return nChanged;
+}
+
+map<string, LabelProps> readPnList(CharString & pnInfoFile)
+{
+    map<string, LabelProps> pnToLabelProps;
+    ifstream pnList(toCString(pnInfoFile));
+    while (!pnList.eof())
+    {
+        string PN_ID;
+        pnList >> PN_ID;
+        if (PN_ID.length() == 0 || pnList.eof())
+            break;
+        LabelProps slippCount;
+        slippCount.p1 = 0;
+        slippCount.p2 = 0;
+        slippCount.p3 = 0;
+        pnToLabelProps[PN_ID] = slippCount;
+    }
+    return pnToLabelProps;
+}
+
+long int readOffSets(ifstream & attsFile, unsigned firstPnIdx, unsigned nPns)
+{
+    long int offset;
+    for (unsigned i = 1; i<=firstPnIdx; ++i)
+        attsFile >> offset;
+    while (offset == 0)
+    {
+        ++firstPnIdx;
+        attsFile >> offset;
+    }
+    cout << "firstPnIdx: " << firstPnIdx << "\n";
+    cout << "offset: "<< offset << "\n";
+    if (firstPnIdx > nPns)
+        return 0;
+    else
+        return offset;
+}
+
+void readMarkerData(CharString attributesDirectory, Marker marker, map<string, LabelProps>& pnToLabelProps, unsigned firstPnIdx)
+{
+    //variables
+    int numberOfReads, pnsFound = 0;
+    float winner, second, numOfRepeats;
+    string nextLine, temp;
+    Pair<int, String<string> > numberOfWordsAndWords;
+    AttributeLine currentLine;
+    //make input stream
+    append(attributesDirectory, "/");
+    append(attributesDirectory, to_string(marker.start));
+    append(attributesDirectory, "_");
+    append(attributesDirectory, marker.motif);
+    ifstream attsFile(toCString(attributesDirectory));
+    long int offset = readOffSets(attsFile, firstPnIdx, firstPnIdx + pnToLabelProps.size() - 1);
+    if (offset != 0)
+        attsFile.seekg(offset);
+    else 
+        return;
+    while (!attsFile.eof() && pnsFound < pnToLabelProps.size())
+    {
+        getline (attsFile,nextLine);
+        if (nextLine.length() == 0)
+            continue;
+        numberOfWordsAndWords = countNumberOfWords(nextLine);
+        if (numberOfWordsAndWords.i1 == 1)
+        {
+            //first check if we passed the last pn in our map
+            if (nextLine > pnToLabelProps.rbegin()->first)
+                break;
+            if (pnToLabelProps.count(nextLine) != 0)
+            {
+                ++pnsFound;
+                attsFile >> temp;
+                attsFile >> temp;
+                attsFile >> temp;
+                attsFile >> temp;
+                attsFile >> temp;
+                attsFile >> numberOfReads;
+                attsFile >> temp;
+                attsFile >> winner;
+                attsFile >> second;
+                //Just use markers where I have more than 10 reads
+                if (numberOfReads >= 10)
+                {
+                    ++pnToLabelProps[nextLine].nMarkers;
+                    for (unsigned i = 0; i < numberOfReads; ++i)
+                    {
+                        currentLine = parseNextLine(winner, second, attsFile, marker, pnToLabelProps, nextLine);
+                        Pair<string,Marker> mapKey = Pair<string,Marker>(nextLine, marker);
+                        appendValue(markerAndPnToReads[mapKey],currentLine);
+                        markerToAllelesAndGenotypes[marker].i1.insert(currentLine.numOfRepeats);
+                    }
+                }
+                //Not enough reads
+                else
+                {
+                    for (unsigned i = 0; i <= numberOfReads; ++i)
+                        getline (attsFile,nextLine);
+                }
+            }
+           // Don't want this pn, walk on by
+            else
+            {
+                attsFile >> temp;
+                attsFile >> temp;
+                attsFile >> temp;
+                attsFile >> temp;
+                attsFile >> temp;
+                attsFile >> numberOfReads;
+                attsFile >> temp;
+                attsFile >> temp;
+                attsFile >> temp;
+                for (unsigned i = 0; i <= numberOfReads; ++i)
+                    getline (attsFile,nextLine);
+            }
+        }
+        else
+            cerr << "Something went sideways while reading attributes @: " << attributesDirectory << "\n";
+    }
+    markerToAllelesAndGenotypes[marker].i2 = makeGenotypes(markerToAllelesAndGenotypes[marker].i1);
 }
 
 int main(int argc, char const ** argv)
@@ -478,17 +606,18 @@ int main(int argc, char const ** argv)
 	    return res == seqan::ArgumentParser::PARSE_ERROR;
 
     CharString modelDir = options.modelDirectory;
-    ifstream attributeFile(toCString(options.attDirChromNumPN)), slippageFile(toCString(options.markerSlippageFile));
-    if(attributeFile.fail())
-    {
-        cout << "Unable to locate attributes file." << options.attDirChromNumPN << endl;
-        return 1;
-    }
+    ifstream slippageFile(toCString(options.markerSlippageFile));
     if(slippageFile.fail())
     {
         cout << "Unable to locate slippageFile: " << options.markerSlippageFile << endl;
         return 1;
     }
+    else
+        readMarkerSlippage(slippageFile, options.modelDirectory);
+
+    //Read pn list
+    map<string, LabelProps> pnToLabelProps = readPnList(options.pnList);
+    //make output file
     ofstream outputFile;
     outputFile.open(toCString(options.outputFile), ios_base::app);
     if(outputFile.fail())
@@ -496,99 +625,32 @@ int main(int argc, char const ** argv)
         cout << "Unable to create output file." << endl;
         return 1;
     }
-    string pnId;
-    LabelProps slippCount;
-    slippCount.p1 = 0;
-    slippCount.p2 = 0;
-    slippCount.p3 = 0;
-    string nextLine;
-    Marker marker;
-    int numberOfReads, nMarkers = 0, nChanged = 0;
-    float winner, second;
-    Pair<int, String<string> > numberOfWordsAndWords;
-    attributeFile >> pnId;
-    readMarkerSlippage(slippageFile);
-    AttributeLine currentLine;
-    while (!attributeFile.eof())
+    for (auto &marker: markerToStats)
     {
-        getline (attributeFile,nextLine);
-        if (nextLine.length() == 0)
-            continue;
-        numberOfWordsAndWords = countNumberOfWords(nextLine);
-        if (numberOfWordsAndWords.i1 == 9)
+        readMarkerData(options.attributesDirectory, marker.first, pnToLabelProps, options.firstPnIdx);
+    }
+    cout << "Finished reading attributes data." << endl;
+    for (auto& pn: pnToLabelProps)
+    {
+        if (pn.second.nMarkers < 1)
         {
-            marker.chrom = numberOfWordsAndWords.i2[0];
-            marker.start = lexicalCast<int>(numberOfWordsAndWords.i2[1]);
-            marker.end = lexicalCast<int>(numberOfWordsAndWords.i2[2]);
-            numberOfReads = lexicalCast<int>(numberOfWordsAndWords.i2[5]);
-            winner = lexicalCast<float>(numberOfWordsAndWords.i2[7]);
-            second = lexicalCast<float>(numberOfWordsAndWords.i2[8]);
-            if (numberOfReads >= 10 && markerToNallelesPSumSlippAndStutt.count(marker) != 0)
-            {
-                append(modelDir, "/");
-                append(modelDir, marker.chrom);
-                append(modelDir, "_");
-                stringstream startStr;
-                startStr << marker.start;
-                append(modelDir, startStr.str());
-                startStr.clear();
-                startStr.str("");
-                const char *model_in_file = toCString(modelDir);
-                markerToModel[marker] = load_model(model_in_file);
-                modelDir = options.modelDirectory;
-            }
-            else
-            {
-                if (markerToNallelesPSumSlippAndStutt.count(marker) != 0)
-                    markerToNallelesPSumSlippAndStutt[marker].i2[0] = -1.0;
-            }
+            cout << "No markers with more than minimum number of reads for: " << pn.first << endl;
+            outputFile << pn.first << "\t" << 0.0 << endl;
+            return 0;
         }
-        if (numberOfWordsAndWords.i1 == 11 && markerToNallelesPSumSlippAndStutt.count(marker) != 0)
+        double current_sp = (0.5*pn.second.p2)/(pn.second.p1 + pn.second.p2 + pn.second.p3);
+        double changed = 1, nChanged = 0;
+        while (changed > 0.005)
         {
-            if (numberOfReads >= 10)
-            {
-                ++nMarkers;
-                for (unsigned i = 0; i < numberOfReads; ++i)
-                {
-                    if (i == 0)
-                        currentLine = parseNextLine(winner, second, attributeFile, marker, numberOfWordsAndWords.i2, true, slippCount);
-                    else
-                        currentLine = parseNextLine(winner, second, attributeFile, marker, numberOfWordsAndWords.i2, false, slippCount);
-                    appendValue(markerToReads[marker],currentLine);
-                    markerToAllelesAndGenotypes[marker].i1.insert(currentLine.numOfRepeats);
-                }
-                markerToAllelesAndGenotypes[marker].i2 = makeGenotypes(markerToAllelesAndGenotypes[marker].i1);
-            }
-            else
-            {
-                for (unsigned i = 0; i < numberOfReads-1; ++i)
-                    getline (attributeFile,nextLine);
-            }
+            current_sp = estimateSlippage(current_sp, pn.first);
+            cout << "Estimated slippage." << endl;
+            nChanged = updateGenotypes(current_sp, pn.first);
+            cout << "Updated genotypes." << endl;
+            changed = (float)nChanged/(float)pn.second.nMarkers;
+            cout << nChanged << " " << pn.second.nMarkers << endl;
         }
-        if (numberOfWordsAndWords.i1 != 9 && numberOfWordsAndWords.i1 != 11)
-            cerr << "Format error in attribute file!" << endl;
+        cout << "Number of markers available for estimating pnSlippage for " << pn.first << " is: " << pn.second.nMarkers << endl;
+        outputFile << pn.first << "\t" << current_sp << endl;
     }
-    attributeFile.close();
-    cout << "Finished reading attributes for: " << pnId << endl;
-    double current_sp = (0.5*slippCount.p2)/(slippCount.p1 + slippCount.p2 + slippCount.p3);
-    if (nMarkers < 1)
-    {
-        current_sp = 0.0;
-        cout << "No markers with more than minimum number of reads for: " << pnId << endl;
-        outputFile << pnId << "\t" << current_sp << endl;
-        return 0;
-    }
-    double changed = 1;
-    while (changed > 0.005)
-    {
-        current_sp = estimateSlippage(current_sp);
-        cout << "Estimated slippage." << endl;
-        nChanged = updateGenotypes(current_sp);
-        cout << "Updated genotypes." << endl;
-        changed = (float)nChanged/(float)nMarkers;
-        cout << nChanged << " " << nMarkers << endl;
-    }
-    cout << "Number of markers available for estimating pnSlippage for " << pnId << " is: " << nMarkers << endl;
-    outputFile << pnId << "\t" << current_sp << endl;
     return 0;
 }
