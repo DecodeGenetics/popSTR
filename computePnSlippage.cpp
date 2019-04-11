@@ -501,7 +501,7 @@ map<string, Pair<double, unsigned> > readPrevSlipp(CharString & previousSlippage
         prevSlipp >> currPnSlipp;
         prevSlipp >> nMarkers;
         pnToPrevSlipp[PnId].i1 = currPnSlipp;
-        pnToPrevSlipp[PnId].i1 = nMarkers;
+        pnToPrevSlipp[PnId].i2 = nMarkers;
     }
     prevSlipp.close();
     return pnToPrevSlipp;
