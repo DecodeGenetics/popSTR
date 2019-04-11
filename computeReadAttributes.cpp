@@ -12,6 +12,7 @@
 #include <fstream>
 #include <sys/stat.h>
 #include <ctime>
+#include <climits>
 #include "ssw_cpp.h"
 
 using namespace std;
@@ -39,9 +40,9 @@ struct STRinfoSmall {
     CharString chrom;
     int STRstart;
     int STRend;
-    Dna5String motif;
+    CharString motif;
     float refRepeatNum; //Number of repeats in reference sequence
-    Dna5String refRepSeq;
+    CharString refRepSeq;
 } ;
 
 //So I can map from STRinfoSmall in finalMap
@@ -53,7 +54,7 @@ bool operator<(const STRinfoSmall & Left, const STRinfoSmall & Right)
 //structure to store read information
 struct ReadInfo {
     int STRend;
-    Dna5String motif;
+    CharString motif;
     float refRepeatNum; //Number of repeats in reference sequence
     float numOfRepeats;
     float ratioBf;
@@ -81,7 +82,7 @@ struct ReadPairInfo {
     unsigned sequenceLength;
     unsigned mateEditDist;
     bool wasUnaligned;
-    Dna5String repSeq; //Repeat sequence in read
+    CharString repSeq; //Repeat sequence in read
 } ;
 
 //Map to check how many repeats I need to find in a read w.r.t. motif length
@@ -722,7 +723,7 @@ Pair<Triple<CharString, CharString, int>,ReadInfo> computeReadInfo(BamAlignmentR
     return Pair<Triple<CharString, CharString, int>,ReadInfo>(mapKey,mapValue);
 }
 
-String<STRinfo> readMarkerinfo(CharString & markerInfoFile, int minFlank, CharString attributeDirectory, map<Pair<int>, ofstream*> & startAndEndToStream)
+String<STRinfo> readMarkerinfo(CharString & markerInfoFile, int minFlank, CharString attributeDirectory, map<Pair<int>, Pair<String<long int> ,FILE*> > & startAndEndToStreamAndOffsets, unsigned nPns)
 {
     String<STRinfo> markers;
     STRinfo currInfo;
@@ -764,9 +765,21 @@ String<STRinfo> readMarkerinfo(CharString & markerInfoFile, int minFlank, CharSt
         append(currAttributeDirectory, currInfo.motif);
         //cout << "Outputfile: " << currAttributeDirectory << "\n";
         Pair<int> mapKey = Pair<int>(currInfo.STRstart, currInfo.STRend);
-        startAndEndToStream[mapKey] = new ofstream(toCString(currAttributeDirectory));
-        if (!startAndEndToStream[mapKey] || !*startAndEndToStream[mapKey])
-            perror("Couldn't make ofstream for marker.");
+        FILE *fp;
+        fp = fopen(toCString(currAttributeDirectory), "w+");
+        startAndEndToStreamAndOffsets[mapKey].i2 = fp;
+        if (startAndEndToStreamAndOffsets[mapKey].i2 == NULL)
+            cerr << "Couldn't make ofstream for marker @ " << currAttributeDirectory << "\n";
+        else
+        {
+            if (fseek(startAndEndToStreamAndOffsets[mapKey].i2, nPns*(11), SEEK_SET) != 0)
+                cerr << "Could not reserve index space at front of " << currAttributeDirectory << "\n";
+            else
+            {
+                resize(startAndEndToStreamAndOffsets[mapKey].i1, nPns, 0);
+                fprintf(startAndEndToStreamAndOffsets[mapKey].i2, "\r\n");
+            }
+        }
         appendValue(markers, currInfo);
     }
     return markers;
@@ -802,10 +815,19 @@ int main(int argc, char const ** argv)
         cerr << "USAGE: " << argv[0] << " bamFiles outputDirectory markerInfoFile minFlankLength maxRepeatLength chrom\n";
         return 1;
     }
-    //Save maximum repeat length
+    //Store maximum repeat length
     int maxRepeatLength = lexicalCast<int>(argv[5]), minFlank = lexicalCast<int>(argv[4]);
-    //Save PN-id and path to markerInfoFile
+    //Store parameters
     CharString bamListFile = argv[1], markerInfoFile = argv[3], attributeDirectory = argv[2], chrom = argv[6];
+    //Read pn info
+    String<Pair<CharString> > PnsAndBams = readBamList(bamListFile);
+    unsigned nPns = length(PnsAndBams);
+    if (nPns==0)
+    {
+        cerr << "The PN and BAM file list supplied is empty, please supply a file containing at least one PN and its BAM.\n";
+    }
+    cout << "Finished reading pn info, number of PNs: " << nPns << "\n";
+
     struct stat st2;
     if (stat(toCString(attributeDirectory),&st2) != 0)
     {
@@ -821,22 +843,18 @@ int main(int argc, char const ** argv)
     if(stat(toCString(attributeDirectory),&st3) != 0)
         mkdir(toCString(attributeDirectory),0777);
     append(attributeDirectory, "/");
-    map<Pair<int>, ofstream*> startAndEndToStream;
+    //Set up a map from marker to String of long int values to store offset of each PN in each markerFile.
+    map<STRinfoSmall, String<long int> > markerToPnOffsets;
+    //Map from start and end coordinate to output stream
+    map<Pair<int>, Pair<String<long int>, FILE* > > startAndEndToStreamAndOffsets;
     //Read marker info
-    String<STRinfo> markers = readMarkerinfo(markerInfoFile, minFlank, attributeDirectory, startAndEndToStream);
+    String<STRinfo> markers = readMarkerinfo(markerInfoFile, minFlank, attributeDirectory, startAndEndToStreamAndOffsets, nPns);
     if (length(markers)==0)
     {
         cerr << "The markerInfo file is empty, please supply a file containing at least one marker.\n";
         return 1;
     }
     cout << "Finished reading marker Info, number of markers: " << length(markers) << "\n";
-    //Read pn info
-    String<Pair<CharString> > PnsAndBams = readBamList(bamListFile);
-    if (length(PnsAndBams)==0)
-    {
-        cerr << "The PN and BAM file list supplied is empty, please supply a file containing at least one PN and its BAM.\n";
-    }
-    cout << "Finished reading pn info, number of PNs: " << length(PnsAndBams) << "\n";
 
     //Set up how many repeats I require for each motif length
     repeatNumbers[1]=10;
@@ -1094,8 +1112,12 @@ int main(int argc, char const ** argv)
         for(map<STRinfoSmall, Triple<std::set<float>,vector<float>, String<ReadPairInfo> > >::iterator it = finalMap.begin(); it != ite2; ++it)
         {
             Pair<int> mapKey = Pair<int>(it->first.STRstart, it->first.STRend);
-            if (startAndEndToStream.count(mapKey)>0)
-                *(startAndEndToStream[mapKey]) << PN_ID << "\n";
+            if (startAndEndToStreamAndOffsets.count(mapKey)>0)
+            {
+                fflush(startAndEndToStreamAndOffsets[mapKey].i2);
+                startAndEndToStreamAndOffsets[mapKey].i1[i] = ftell(startAndEndToStreamAndOffsets[mapKey].i2);
+                fprintf(startAndEndToStreamAndOffsets[mapKey].i2, "%s\n", toCString(PN_ID));
+            }
             else
             {
                 cout << "Trying to write to a file that doesn't exist!" << endl;
@@ -1137,7 +1159,7 @@ int main(int argc, char const ** argv)
             if (secondFreq < 0.10*winnerFreq)
                 second = winner;
             //Write attributes and initial labelling to output file
-            *(startAndEndToStream[mapKey]) << it->first.chrom << "\t" << it->first.STRstart << "\t" << it->first.STRend << "\t" << it->first.motif << "\t" << setprecision(1) << fixed << it->first.refRepeatNum << "\t" << length(readPairs) << "\t" << it->first.refRepSeq << "\t" << setprecision(1) << fixed << winner << "\t" << setprecision(1) << fixed << second << "\n";
+            fprintf(startAndEndToStreamAndOffsets[mapKey].i2,"%s\t%u\t%u\t%s\t%.1f\t%u\t%s\t%.1f\t%.1f\n",toCString(it->first.chrom),it->first.STRstart,it->first.STRend,toCString(it->first.motif),it->first.refRepeatNum,length(readPairs),toCString(it->first.refRepSeq),winner,second);
             for (unsigned i=0; i < length(readPairs); ++i)
             {
                 ReadPairInfo printMe = readPairs[i];
@@ -1145,17 +1167,38 @@ int main(int argc, char const ** argv)
                 if (printMe.numOfRepeats < 0)
                     continue;
                 //Print attributes to output file.
-                *(startAndEndToStream[mapKey]) << setprecision(1) << fixed << printMe.numOfRepeats << "\t" << setprecision(2) << fixed << printMe.ratioBf << "\t" << setprecision(2) << fixed << printMe.ratioAf << "\t" << printMe.locationShift << "\t" << printMe.mateEditDist << "\t" << setprecision(2) << fixed << std::min((float)1.00, printMe.purity) << "\t" << setprecision(2) << fixed << printMe.ratioOver20In << "\t" << setprecision(2) << fixed << printMe.ratioOver20After << "\t" << printMe.sequenceLength << "\t" << printMe.wasUnaligned << "\t" << printMe.repSeq << "\n";
+                fprintf(startAndEndToStreamAndOffsets[mapKey].i2,"%.1f\t%.1f\t%.1f\t%u\t%u\t%.2f\t%.2f\t%.2f\t%u\t%u\t%s\n",printMe.numOfRepeats,printMe.ratioBf,printMe.ratioAf,printMe.locationShift,printMe.mateEditDist,printMe.purity,printMe.ratioOver20In,printMe.ratioOver20After,printMe.sequenceLength,printMe.wasUnaligned,toCString(printMe.repSeq));
             }
         }
         //Flush last stream before starting next PN
-        *startAndEndToStream[Pair<int>(finalMap.rbegin()->first.STRstart, finalMap.rbegin()->first.STRend)] << flush;
+        fflush(startAndEndToStreamAndOffsets[Pair<int>(finalMap.rbegin()->first.STRstart, finalMap.rbegin()->first.STRend)].i2);
         time_t pnEnd = time(0);
         cout << "Finished generation of output for " << PN_ID << " in " << pnEnd - pnStart << " seconds.\n";
         myMap.clear();
         finalMap.clear();
     }
     //END FOR LOOP OVER PNS HERE 
+    //Loop over marker map and write offset vector to the beginning of each file 
+    for (auto& marker: startAndEndToStreamAndOffsets)
+    {
+        //Find index of first pn with available reads
+        unsigned idx = 0;
+        while (marker.second.i1[idx] == 0)
+            ++idx;
+        rewind(marker.second.i2);
+        for (unsigned i=0; i<length(marker.second.i1); ++i)
+        {
+            fprintf(marker.second.i2, "%u ", marker.second.i1[i]);
+            fflush(marker.second.i2);
+            //Chech if I am writing passed the reserved space at front
+            if (ftell(marker.second.i2) > marker.second.i1[idx])
+            {
+                cerr << "writing pn-offsets over pnData @: " << marker.first.i1 << endl;
+                cerr << "Pn idx: " << i << " and offset: " << marker.second.i1[i] << endl;
+                return 1;
+            }
+        }            
+    }
     time_t end = time(0);
     cout << "Total time: " << end - begin << "\n";
     return 0;
