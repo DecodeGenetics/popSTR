@@ -87,13 +87,8 @@ struct GenotypeInfo {
 //For storing command line arguments
 struct MsGenotyperOptions
 {
-    CharString attDirChromNum, pnSlippageFile, markerSlippageFile, vcfOutputDirectory, vcfFileName, intervalIndex;
-    unsigned int startCoordinate;
-    unsigned long int endCoordinate;
-
-    MsGenotyperOptions() :
-        startCoordinate(0), endCoordinate(ULONG_MAX)
-    {}
+    CharString attDirChromNum, pnSlippageFile, markerSlippageFile, vcfOutputDirectory, vcfFileName, markerList, intervalIndex;
+    unsigned firstPnIdx;
 } ;
 
 struct MakeGenotypesRet {
@@ -140,10 +135,10 @@ ArgumentParser::ParseResult parseCommandLine(MsGenotyperOptions & options, int a
     setShortDescription(parser, "Microsatellite genotyper");
     setVersion(parser, "1.3");
     setDate(parser, "January 2019");
-    addUsageLine(parser, "\\fI-ADCN\\fP attributesDirectory/chromNum \\fI-PNS\\fP pnSlippageFile \\fI-MS\\fP markerSlippageFile \\fI-VD\\fP vcfOutputDirectory \\fI-VN\\fP vcfFileName \\fI-R\\fP start end \\fI-I\\fP intervalIndex ");
-    addDescription(parser, "This program performs genptyping on a per chromosome basis for all PNs in the pnSlippageFile given that it can find an attribute file for the PN. The genotypes are written to a file specified by the user.");
+    addUsageLine(parser, "\\fI-ADCN\\fP attributesDirectory/chromNum \\fI-PNS\\fP pnSlippageFile \\fI-MS\\fP markerSlippageFile \\fI-VD\\fP vcfOutputDirectory \\fI-VN\\fP vcfFileName \\fI-ML\\fP markerList \\fI-I\\fP intervalIndex \\fI-FP\\fP firstPnIdx");
+    addDescription(parser, "Performs genptyping for all PNs in the pnSlippageFile over all markers in the markerFile. The genotypes are written to a file specified by the user.");
 
-    addOption(parser, ArgParseOption("ADCN", "attributesDirectory/chromNum", "Path to attributes files for the chromosome being genotyped.", ArgParseArgument::INPUT_FILE, "IN-DIR"));
+    addOption(parser, ArgParseOption("ADCN", "attributesDirectory/chromNum", "Path to attributes files for the markers being genotyped.", ArgParseArgument::INPUT_FILE, "IN-DIR"));
     setRequired(parser, "attributesDirectory/chromNum");
 
     addOption(parser, ArgParseOption("PNS", "pnSlippageFile", "A file containing slippage rates for the pns to be genotyped.", ArgParseArgument::INPUT_FILE, "IN-FILE"));
@@ -158,12 +153,15 @@ ArgumentParser::ParseResult parseCommandLine(MsGenotyperOptions & options, int a
     addOption(parser, ArgParseOption("VN", "vcfFileName", "Name of vcf output file.", ArgParseArgument::OUTPUT_FILE, "OUT-FILE"));
     setRequired(parser, "vcfFileName");
 
-    addOption(parser, ArgParseOption("R", "range", "The range to genotype.", ArgParseArgument::INTEGER, "BEGIN END", false, 2));
-    setRequired(parser, "range");
+    addOption(parser, ArgParseOption("ML", "markerList", "List of markers to genotype.", ArgParseArgument::INPUT_FILE, "IN-FILE"));
+    setRequired(parser, "markerList");
 
     addOption(parser, ArgParseOption("I", "intervalIndex", "Index of the interval being processed", ArgParseArgument::STRING, "INDEX"));
     setRequired(parser, "intervalIndex");
 	setDefaultValue(parser, "intervalIndex", "1");
+
+    addOption(parser, ArgParseOption("FP", "firstPnIdx", "Index of first Pn in pnList within the attributeFile.", ArgParseArgument::INTEGER, "INTEGER"));
+    setRequired(parser, "firstPnIdx");
 	
 	ArgumentParser::ParseResult res = parse(parser, argc, argv);
 	
@@ -175,9 +173,9 @@ ArgumentParser::ParseResult parseCommandLine(MsGenotyperOptions & options, int a
 	getOptionValue(options.markerSlippageFile, parser, "markerSlippageFile");
 	getOptionValue(options.vcfOutputDirectory, parser, "vcfOutputDirectory");
 	getOptionValue(options.vcfFileName, parser, "vcfFileName");
-	getOptionValue(options.startCoordinate, parser, "range", 0);
-	getOptionValue(options.endCoordinate, parser, "range", 1);
+	getOptionValue(options.markerList, parser, "markerList");
 	getOptionValue(options.intervalIndex, parser, "intervalIndex");
+    getOptionValue(options.firstPnIdx, parser, "firstPnIdx");
 	
 	return ArgumentParser::PARSE_OK;
 }
@@ -898,18 +896,45 @@ Pair<int, String<string> > countNumberOfWords(string sentence)
     return Pair<int, String<string> >(numberOfWords, words);
 }
 
-void readPnSlippage(ifstream& pnSlippageFile)
+void readPnSlippage(CharString & pnSlippageFile, String<string> & PnIds)
 {
+    ifstream pnSlippageStream(toCString(pnSlippageFile));
+    if(pnSlippageStream.fail())
+        cout << "Unable to locate pnSlippageFile @ " << pnSlippageFile << endl;
     string PnId;
     int nMarkers;
     double currPnSlipp;
-    while (!pnSlippageFile.eof())
+    while (!pnSlippageStream.eof())
     {
-        pnSlippageFile >> PnId;
-        pnSlippageFile >> currPnSlipp;
+        pnSlippageStream >> PnId;
+        pnSlippageStream >> currPnSlipp;
         pnToSize[PnId]= currPnSlipp;
+        appendValue(PnIds,PnId);
     }
-    pnSlippageFile.close();
+    eraseBack(PnIds);
+    pnSlippageStream.close();
+}
+
+String<Pair<int, string> > readMarkers(CharString & markerFile)
+{
+    ifstream markerStream(toCString(markerFile));
+    if(markerStream.fail())
+        cout << "Unable to locate markerList @ " << markerFile << endl;
+    String<Pair<int, string> > markerList;
+    string line;
+    while (getline(markerStream, line))
+    {
+        istringstream iss(line);
+        
+        string col1, motif;
+        int startPos, col3;
+
+        iss >> col1 >> startPos >> col3 >> motif;
+        Pair<int, string> currPair = Pair<int, string>(startPos, motif); 
+        appendValue(markerList, currPair);
+    }
+    markerStream.close();
+    return markerList;
 }
 
 inline bool exists(const std::string& name)
@@ -984,6 +1009,16 @@ Pair<bool> genotypeIsConfident(GenotypeInfo& genotypeInfo)
     return Pair<bool>(A1ok, A2ok);
 }
 
+long int readOffSets(ifstream & attsFile, unsigned firstPnIdx)
+{
+    long int offset;
+    for (unsigned i = 1; i<=firstPnIdx; ++i)
+        attsFile >> offset;
+    while (offset == 0)
+        attsFile >> offset;
+    return offset;
+}
+
 int main(int argc, char const ** argv)
 {
     //Check arguments.
@@ -993,24 +1028,22 @@ int main(int argc, char const ** argv)
 	    return res == seqan::ArgumentParser::PARSE_ERROR;
 
     //Assign parameters
-    int startCoord = options.startCoordinate, endCoord = options.endCoordinate;
     append(options.attDirChromNum, "/");
-    CharString attributePath = options.attDirChromNum, intervalIndex = options.intervalIndex, markerSlippageFile = options.markerSlippageFile;
-    ifstream pnSlippageFile(toCString(options.pnSlippageFile));
-    if(pnSlippageFile.fail())
-        cout << "Unable to locate pnSlippageFile @ " << options.pnSlippageFile << endl;
-    append(markerSlippageFile, "_");
-    append(markerSlippageFile, intervalIndex);
-    ofstream markerSlippageOut(toCString(markerSlippageFile));
+    CharString attributePath = options.attDirChromNum;    
+    append(options.markerSlippageFile, "_");
+    append(options.markerSlippageFile, options.intervalIndex);
+    ofstream markerSlippageOut(toCString(options.markerSlippageFile));
     string PnId, chrom, motif, nextWord, refRepSeq;
     String<string> PnIds;
     std::set<Marker> markers;
     int start, end, numberOfReads;
     float refRepeatNum, winner, second;
     bool enoughReads = true;
-    //Read the slippage rate for all PNs into the pnToSize map.
-    readPnSlippage(pnSlippageFile);
-    cout << "Finished reading pnSlipp." << endl;
+    //Read the slippage rate for all PNs into the pnToSize map and list of markers to genotype.
+    readPnSlippage(options.pnSlippageFile, PnIds);
+    cout << "Finished reading pnSlipp, number of PNs: " << length(PnIds) << "\n";
+    String<Pair<int, string> > markersToGenotype = readMarkers(options.markerList);
+    cout << "Finished reading markerList, number of markers: " << length(markersToGenotype) << "\n";
     //Map from marker to all reads covering it
     map<Marker, String<AttributeLine> > mapPerMarker;
     //Count the total number of alleles in the population for each marker -- by checking the size of the set
@@ -1024,7 +1057,7 @@ int main(int argc, char const ** argv)
     append(outputDirectory, "/");
     append(outputDirectory, outputFileName);
     append(outputDirectory, "_");
-    append(outputDirectory, intervalIndex);
+    append(outputDirectory, options.intervalIndex);
     append(outputDirectory, ".vcf");
     ofstream outputFile(toCString(outputDirectory));
     VcfFileOut out(outputFile, Vcf());
@@ -1034,13 +1067,14 @@ int main(int argc, char const ** argv)
     AttributeLine currentLine;
     Pair<int, String<string> > numberOfWordsAndWords;
 
-    //Iterate over all Pns I have slippage for and read from attribute files in the given interval
-    map<string, double>::const_iterator pnEnd = pnToSize.end();
-    int nProcessedPns = 0;
-    for (map<string, double>::iterator pnStart = pnToSize.begin(); pnStart != pnEnd; ++pnStart)
+    //Iterate over all markers in the markerList and read from their attribute files
+    int nProcessedMarkers = 0;
+    for (unsigned i=0; i<length(markersToGenotype); ++i)
     {
-        PnId = pnStart->first;
-        append(attributePath, PnId);
+        //Make path to attributefile for current marker
+        append(attributePath, to_string(markersToGenotype[i].i1));
+        append(attributePath, "_");
+        append(attributePath, markersToGenotype[i].i2);
         bool is_gz = false;
         io::filtering_istream attributeFile_gz;
         ifstream attributeFile;
@@ -1052,14 +1086,18 @@ int main(int argc, char const ** argv)
             attributeFile_gz.push(io::gzip_decompressor());
             attributeFile_gz.push(attributeFileGz);
             std::getline (attributeFile_gz, nextLine);
-            //cout << nextLine << "\n";
-            appendValue(PnIds,nextLine);
+            PnId = nextLine;
         }
         else
+        {
             attributeFile.open(toCString(attributePath));
-        ++nProcessedPns;
-        if (nProcessedPns % 1000==0)
-            cout << "Working on pn number: " << nProcessedPns << endl;
+            long int offset = readOffSets(attributeFile, options.firstPnIdx);
+            if (offset != 0)
+                attributeFile.seekg(offset);
+            else 
+                continue;
+        }
+        ++nProcessedMarkers;
         while (is_gz ? std::getline (attributeFile_gz, nextLine) : std::getline (attributeFile, nextLine))
         {
             if (nextLine.length() == 0)
@@ -1068,7 +1106,6 @@ int main(int argc, char const ** argv)
             if (numberOfWordsAndWords.i1 == 1)
             {
                 PnId = nextLine;
-                appendValue(PnIds,PnId);
             }
             if (numberOfWordsAndWords.i1 == 9)
             {
@@ -1079,25 +1116,7 @@ int main(int argc, char const ** argv)
                 lexicalCast(marker.refRepeatNum,numberOfWordsAndWords.i2[4]);
                 lexicalCast(numberOfReads,numberOfWordsAndWords.i2[5]);
                 marker.refRepSeq = numberOfWordsAndWords.i2[6];
-                //If I am in front of the interval, I move to the next marker.
-                if (marker.start < startCoord)
-                {
-                    if (is_gz)
-                    {
-                        for (unsigned i = 0; i < numberOfReads; ++i)
-                            getline (attributeFile_gz,nextLine);
-                    }
-                    else
-                    {
-                        for (unsigned i = 0; i < numberOfReads; ++i)
-                            getline (attributeFile,nextLine);
-                    }
-                    continue;
-                }
-                //If I have passed the interval, I move on to the next pn.
-                if (marker.start > endCoord)
-                    break;
-                //Otherwise the marker is in the interval and I process it.
+                //Insert marker into my marker set
                 markers.insert(marker);
                 lexicalCast(winner,numberOfWordsAndWords.i2[7]);
                 lexicalCast(second,numberOfWordsAndWords.i2[8]);
@@ -1128,11 +1147,14 @@ int main(int argc, char const ** argv)
     }
     chrom = marker.chrom;
     cout << "Reading data from input complete." << endl;
-
+    
     //Make header for vcf file
     makeVcfHeader(out, PnIds, chrom);
-    cout << "Number of markers: " << mapPerMarker.size() << endl;
-    cout << "Number of pns: " << length(PnIds) << endl;
+    //cout << "Number of markers: " << mapPerMarker.size() << endl;
+    //cout << "Number of pns: " << length(PnIds) << endl;
+    //for (unsigned i=0; i<length(PnIds);++i)
+        //cout << PnIds[i] << "\t";
+    //cout << endl;
 
     double *prob_estimates = NULL;
     double predict_label;
