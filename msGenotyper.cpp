@@ -9,12 +9,14 @@
 #include <sstream>
 #include <fstream>
 #include <ios>
+#include <assert.h>
 #include <sys/stat.h>
 #include <seqan/file.h>
 #include <seqan/find.h>
 #include <seqan/basic.h>
 #include <seqan/vcf_io.h>
 #include <seqan/sequence.h>
+#include <seqan/arg_parse.h>
 #include <boost/iostreams/filtering_stream.hpp>
 #include <boost/iostreams/filtering_streambuf.hpp>
 #include <boost/iostreams/copy.hpp>
@@ -70,6 +72,19 @@ struct LabelProps {
     Pair<int, double> p3;
 } ;
 
+//For storing marker values
+struct MarkerStats
+{
+    model* regressionModel;
+    LabelProps slippCount;
+    double slippage;
+    unsigned nAlleles;
+    double stutter;
+    double stepSum;
+    std::set<float> alleles;
+    std::set<float> trueAlleles;
+};
+
 //For storing all possible genotypes, their pValues, the chosen genotype, its pValue, all alleles with their frequencies and number of reads available for the decision
 struct GenotypeInfo {
     String<Pair<float> > genotypes;
@@ -93,18 +108,8 @@ bool operator<(const Marker & left, const Marker & right)
     return left.start < right.start;
 }
 
-//Sums the pValues of reads and counts the number of reads for each type of label at every marker, also stores the current slippage rate value for each marker
-map<Marker, Pair<Pair<LabelProps,double> ,model* > > markerToSizeAndModel;
-//Store stutter rate and nAlleles for each marker
-map<Marker, Pair<int, double> > markerToNallelesAndStutter;
-//Stores the slippage rate value for each PN - read from input file.
-map<string, Pair<double, int> > pnToSize;
-//Maps from pnId to reads and labels for one marker, is cleared for each marker
-map<string, String<Pair<float> > > pnToLabels;
-//Map from marker to (average stepsize)%period
-map<Marker, double> markerToStepSum;
-//Map from marker to alleles that I have found more than 3 reads of with freq > 25% in a single PN
-map<Marker, std::set<float> > markerToTrueAlleles;
+//stores various marker specific values
+map<Marker, MarkerStats> markerToStats;
 //for debugging purposes
 bool useGeom = true;
 
@@ -143,7 +148,7 @@ void fillProblemX(int idx, AttributeLine currentLine, problem& myProb)
 double getPval(Marker marker, AttributeLine currentLine)
 {
     double predict_label;
-    model* model_ = markerToSizeAndModel[marker].i2;
+    model* model_ = markerToStats[marker].regressionModel;
     double *prob_estimates = (double *) malloc(2*sizeof(double));
     problem prob_;
     prob_.bias = -1;
@@ -156,39 +161,56 @@ double getPval(Marker marker, AttributeLine currentLine)
     return prob_estimates[0];
 }
 
-//Parses one line from attribute file by filling up and returning an AttributeLine, also initializes markerToSizeAndModel map using the labels
-AttributeLine parseNextLine(float winner, float second, io::filtering_istream& attributeFile, Marker& marker, string PnId, map<Pair<string,Marker>, GenotypeInfo>& PnAndMarkerToGenotype, String<string> firstLine, bool useFirstLine, bool useModelAndLabels, bool enoughReads)
+//Parses one line from attribute file by filling up and returning an AttributeLine, also initializes markerToStats map labelProps using the labels
+AttributeLine parseNextLine(float winner, float second, bool is_gz, ifstream& attributeFile, io::filtering_istream& attributeFile_gz, Marker& marker, string PnId, map<Pair<string,Marker>, GenotypeInfo>& PnAndMarkerToGenotype, String<string> firstLine, bool useFirstLine, bool useModelAndLabels, bool enoughReads)
 {
     PnAndMarkerToGenotype[Pair<string,Marker>(PnId, marker)].genotype = Pair<float>(winner,second);
     AttributeLine currentLine;
     currentLine.PnId = PnId;
     if (useFirstLine)
     {
-        currentLine.numOfRepeats = lexicalCast<float>(firstLine[0]);
-        currentLine.ratioBf = lexicalCast<float>(firstLine[1]);
-        currentLine.ratioAf = lexicalCast<float>(firstLine[2]);
-        currentLine.locationShift = lexicalCast<unsigned int>(firstLine[3]);
-        currentLine.mateEditDist = lexicalCast<unsigned int>(firstLine[4]);
-        currentLine.purity = lexicalCast<float>(firstLine[5]);
-        currentLine.ratioOver20In = lexicalCast<float>(firstLine[6]);
-        currentLine.ratioOver20After = lexicalCast<float>(firstLine[7]);
-        currentLine.sequenceLength = lexicalCast<unsigned int>(firstLine[8]);
-        currentLine.wasUnaligned = lexicalCast<bool>(firstLine[9]);
+        lexicalCast(currentLine.numOfRepeats, firstLine[0]);
+        lexicalCast(currentLine.ratioBf,firstLine[1]);
+        lexicalCast(currentLine.ratioAf,firstLine[2]);
+        lexicalCast(currentLine.locationShift,firstLine[3]);
+        lexicalCast(currentLine.mateEditDist,firstLine[4]);
+        lexicalCast(currentLine.purity,firstLine[5]);
+        lexicalCast(currentLine.ratioOver20In,firstLine[6]);
+        lexicalCast(currentLine.ratioOver20After,firstLine[7]);
+        lexicalCast(currentLine.sequenceLength,firstLine[8]);
+        currentLine.wasUnaligned = firstLine[9] == "1";
         currentLine.repSeq = firstLine[10];
     }
     else
     {
-        attributeFile >> currentLine.numOfRepeats;
-        attributeFile >> currentLine.ratioBf;
-        attributeFile >> currentLine.ratioAf;
-        attributeFile >> currentLine.locationShift;
-        attributeFile >> currentLine.mateEditDist;
-        attributeFile >> currentLine.purity;
-        attributeFile >> currentLine.ratioOver20In;
-        attributeFile >> currentLine.ratioOver20After;
-        attributeFile >> currentLine.sequenceLength;
-        attributeFile >> currentLine.wasUnaligned;
-        attributeFile >> currentLine.repSeq;
+        if (is_gz)
+        {
+            attributeFile_gz >> currentLine.numOfRepeats;
+            attributeFile_gz >> currentLine.ratioBf;
+            attributeFile_gz >> currentLine.ratioAf;
+            attributeFile_gz >> currentLine.locationShift;
+            attributeFile_gz >> currentLine.mateEditDist;
+            attributeFile_gz >> currentLine.purity;
+            attributeFile_gz >> currentLine.ratioOver20In;
+            attributeFile_gz >> currentLine.ratioOver20After;
+            attributeFile_gz >> currentLine.sequenceLength;
+            attributeFile_gz >> currentLine.wasUnaligned;
+            attributeFile_gz >> currentLine.repSeq;
+        }
+        else
+        {
+            attributeFile >> currentLine.numOfRepeats;
+            attributeFile >> currentLine.ratioBf;
+            attributeFile >> currentLine.ratioAf;
+            attributeFile >> currentLine.locationShift;
+            attributeFile >> currentLine.mateEditDist;
+            attributeFile >> currentLine.purity;
+            attributeFile >> currentLine.ratioOver20In;
+            attributeFile >> currentLine.ratioOver20After;
+            attributeFile >> currentLine.sequenceLength;
+            attributeFile >> currentLine.wasUnaligned;
+            attributeFile >> currentLine.repSeq;
+        }
     }
     if (!useModelAndLabels)
         currentLine.pValue = 0.95;
@@ -204,42 +226,42 @@ AttributeLine parseNextLine(float winner, float second, io::filtering_istream& a
     if ((fabs(currentLine.numOfRepeats - winner) <= 0.05) || (fabs(currentLine.numOfRepeats - second) <= 0.05))
     {
         currentLine.label = 1;
-        ++markerToSizeAndModel[marker].i1.i1.p1.i1;
+        ++markerToStats[marker].slippCount.p1.i1;
         if (enoughReads)
-            markerToSizeAndModel[marker].i1.i1.p1.i2 += currentLine.pValue;
+            markerToStats[marker].slippCount.p1.i2 += currentLine.pValue;
     }
     else
     {
         if ((fabs(currentLine.numOfRepeats - (winner - 1)) <= 0.05) || (fabs(currentLine.numOfRepeats - (second - 1)) <= 0.05))
         {
             currentLine.label = 2;
-            ++markerToSizeAndModel[marker].i1.i1.p2.i1;
+            ++markerToStats[marker].slippCount.p2.i1;
             if (enoughReads)
-                markerToSizeAndModel[marker].i1.i1.p2.i2 += currentLine.pValue;
-            markerToStepSum[marker] += (float)marker.motif.size();
+                markerToStats[marker].slippCount.p2.i2 += currentLine.pValue;
+            markerToStats[marker].stepSum += (float)marker.motif.size();
         }
         else
         {
             currentLine.label = -1;
-            ++markerToSizeAndModel[marker].i1.i1.p3.i1;
+            ++markerToStats[marker].slippCount.p3.i1;
             if (enoughReads)
-                markerToSizeAndModel[marker].i1.i1.p3.i2 += currentLine.pValue;
+                markerToStats[marker].slippCount.p3.i2 += currentLine.pValue;
             float diff1, diff2;
             diff1 = fabs(currentLine.numOfRepeats - winner);
             diff2 = fabs(currentLine.numOfRepeats - second);
             if (fmod(diff1,1.0)<0.05)
             {
                 if (fmod(diff2,1.0)<0.05)
-                    markerToStepSum[marker] += round(std::min(diff1,diff2) * (float)marker.motif.size());
+                    markerToStats[marker].stepSum += round(std::min(diff1,diff2) * (float)marker.motif.size());
                 else
-                    markerToStepSum[marker] += round(diff1 * (float)marker.motif.size());
+                    markerToStats[marker].stepSum += round(diff1 * (float)marker.motif.size());
             }
             else
             {
                 if (fmod(diff2,1.0)<0.05)
-                    markerToStepSum[marker] += round(diff2 * (float)marker.motif.size());
+                    markerToStats[marker].stepSum += round(diff2 * (float)marker.motif.size());
                 else
-                    markerToStepSum[marker] += round(std::min(diff1,diff2) * (float)marker.motif.size());
+                    markerToStats[marker].stepSum += round(std::min(diff1,diff2) * (float)marker.motif.size());
             }
         }
     }
@@ -456,13 +478,13 @@ unsigned getChrLength(string chrom)
 		return 0;
 }
 
-//Write all sorts of info to the header of the vfc file.
-void makeVcfHeader(VcfStream& out, String<string> PnIds, string chrom)
+//Write all sorts of info to the header of the vfc file I pass to the function
+void makeVcfHeader(VcfFileOut& out, String<string> PnIds, string chrom)
 {
-    appendValue(out.header.sequenceNames, chrom);
+    appendValue(contigNames(context(out)), chrom);
     //Add IDs of all PNs to the header
     for (unsigned i = 0; i<length(PnIds); ++i)
-        appendValue(out.header.sampleNames, PnIds[i]);
+        appendValue(sampleNames(context(out)), PnIds[i]);
     unsigned chromLength = getChrLength(chrom);
     string contigString = "<ID=" + chrom + ",length=" + to_string((long long unsigned int)chromLength) + ">";
     //Complicated way of getting todays date
@@ -473,20 +495,22 @@ void makeVcfHeader(VcfStream& out, String<string> PnIds, string chrom)
     timeinfo = localtime(&rawtime);
     strftime(buffer,10,"%Y%m%d",timeinfo);
     string date = buffer;
-    appendValue(out.header.headerRecords, VcfHeaderRecord("fileformat", "VCFv4.2"));
-    appendValue(out.header.headerRecords, VcfHeaderRecord("fileDate", date));
-    appendValue(out.header.headerRecords, VcfHeaderRecord("source", "PopSTR"));
-    appendValue(out.header.headerRecords, VcfHeaderRecord("source_bin", "/odinn/tmp/bjarnih/Genotyping/160205/bin/computeReadAttributes"));
-    appendValue(out.header.headerRecords, VcfHeaderRecord("source_bin", "/odinn/tmp/bjarnih/Genotyping/160205/bin/computePnSlippage"));
-    appendValue(out.header.headerRecords, VcfHeaderRecord("source_bin", "/odinn/tmp/bjarnih/Genotyping/160205/bin/msGenotyper"));
-    appendValue(out.header.headerRecords, VcfHeaderRecord("reference", "/odinn/data/reference/Homo_sapiens-deCODE-hg38/Sequence/WholeGenomeFasta/genome.fa"));
-    appendValue(out.header.headerRecords, VcfHeaderRecord("contig", contigString));
-    appendValue(out.header.headerRecords, VcfHeaderRecord("INFO", "<ID=RefLen,Number=A,Type=Integer,Description=\"Length of the reference allele\">"));
-    appendValue(out.header.headerRecords, VcfHeaderRecord("INFO", "<ID=Motif,Number=1,Type=String,Description=\"Microsatellite repeat motif\">"));
-    appendValue(out.header.headerRecords, VcfHeaderRecord("FORMAT", "<ID=GT,Number=1,Type=String,Description=\"Genotype\">"));
-    appendValue(out.header.headerRecords, VcfHeaderRecord("FORMAT", "<ID=AD,Number=R,Type=Integer,Description=\"Allelic depths for the ref and alt alleles in the order listed\">"));
-    appendValue(out.header.headerRecords, VcfHeaderRecord("FORMAT", "<ID=DP,Number=1,Type=Integer,Description=\"Approximate read depth\">"));
-    appendValue(out.header.headerRecords, VcfHeaderRecord("FORMAT", "<ID=PL,Number=G,Type=Integer,Description=\"PHRED-scaled genotype likelihoods\">"));
+    VcfHeader header;
+    appendValue(header, VcfHeaderRecord("fileformat", "VCFv4.2"));
+    appendValue(header, VcfHeaderRecord("fileDate", date));
+    appendValue(header, VcfHeaderRecord("source", "PopSTR"));
+    appendValue(header, VcfHeaderRecord("source_bin", "/odinn/tmp/bjarnih/Genotyping/160205/bin/computeReadAttributes"));
+    appendValue(header, VcfHeaderRecord("source_bin", "/odinn/tmp/bjarnih/Genotyping/160205/bin/computePnSlippage"));
+    appendValue(header, VcfHeaderRecord("source_bin", "/odinn/tmp/bjarnih/Genotyping/160205/bin/msGenotyper"));
+    appendValue(header, VcfHeaderRecord("reference", "/odinn/data/reference/Homo_sapiens-deCODE-hg38/Sequence/WholeGenomeFasta/genome.fa"));
+    appendValue(header, VcfHeaderRecord("contig", contigString));
+    appendValue(header, VcfHeaderRecord("INFO", "<ID=RefLen,Number=A,Type=Integer,Description=\"Length of the reference allele\">"));
+    appendValue(header, VcfHeaderRecord("INFO", "<ID=Motif,Number=1,Type=String,Description=\"Microsatellite repeat motif\">"));
+    appendValue(header, VcfHeaderRecord("FORMAT", "<ID=GT,Number=1,Type=String,Description=\"Genotype\">"));
+    appendValue(header, VcfHeaderRecord("FORMAT", "<ID=AD,Number=R,Type=Integer,Description=\"Allelic depths for the ref and alt alleles in the order listed\">"));
+    appendValue(header, VcfHeaderRecord("FORMAT", "<ID=DP,Number=1,Type=Integer,Description=\"Approximate read depth\">"));
+    appendValue(header, VcfHeaderRecord("FORMAT", "<ID=PL,Number=G,Type=Integer,Description=\"PHRED-scaled genotype likelihoods\">"));
+    writeHeader(out, header);
 }
 
 //Clear a stringstream and a string, I use this a lot in fillRecordMarker/Pn, so a function seemed appropriate
@@ -739,7 +763,6 @@ Pair<int, String<string> > countNumberOfWords(string sentence)
     String<string> words;
     resize(words, 11);
     int currentWordLength;
-
     if (!isspace(sentence[0]))
     {
         numberOfWords++;
@@ -764,13 +787,44 @@ Pair<int, String<string> > countNumberOfWords(string sentence)
     return Pair<int, String<string> >(numberOfWords, words);
 }
 
-//Read in data from markerSlippageFile
-void readMarkerSlippage(CharString markerSlippageFile, map<Marker, Pair<Pair<LabelProps,double>, model* > >& markerToSizeAndModel, int startCoord, int endCoord)
+String<Pair<int, string> > readMarkers(CharString & markerFile)
 {
+    ifstream markerStream(toCString(markerFile));
+    if(markerStream.fail())
+        cout << "Unable to locate markerList @ " << markerFile << endl;
+    String<Pair<int, string> > markerList;
+    string motif;
+    int startPos;
+    while (true)
+    {
+        markerStream >> startPos;
+        markerStream >> motif;
+        if (markerStream.eof() || motif.length() == 0)
+            break;
+        Pair<int, string> currPair = Pair<int, string>(startPos, motif); 
+        appendValue(markerList, currPair);
+    }
+    markerStream.close();
+    cout << "Finished reading " << length(markerList) << " markers.\n";
+    return markerList;
+}
+
+//Read in data from markerSlippageFile
+void readMarkerSlippage(CharString markerSlippageFile, CharString iterationNumber, CharString regressionModelDirectory)
+{
+    string prevItNum;
+    int itNum;
+    lexicalCast(itNum, iterationNumber);
+    --itNum;
+    prevItNum = to_string(itNum);
+    append(markerSlippageFile, prevItNum);
+    append(markerSlippageFile, "_");
+    append(markerSlippageFile, intervalIndex);
     ifstream markerSlippageIn(toCString(markerSlippageFile));
     double currMarkSlipp, currMarkStutt;
     int nPns, nAlleles;
     Marker currMarker;
+    CharString currMarkerModelDir = regressionModelDirectory;
     while (true)
     {
         markerSlippageIn >> currMarker.chrom;
@@ -785,24 +839,35 @@ void readMarkerSlippage(CharString markerSlippageFile, map<Marker, Pair<Pair<Lab
         markerSlippageIn >> currMarkStutt;
         if (markerSlippageIn.eof())
             break;
-        if (currMarker.start < startCoord)
-            continue;
-        if (currMarker.start > endCoord)
-            break;
-        markerToNallelesAndStutter[currMarker].i1 = nAlleles;
-        markerToNallelesAndStutter[currMarker].i2 = currMarkStutt;
-        markerToSizeAndModel[currMarker].i1.i2 = currMarkSlipp;
-        markerToSizeAndModel[currMarker].i2 = NULL;
+        markerToStats[currMarker].nAlleles = nAlleles;
+        markerToStats[currMarker].stutter = currMarkStutt;
+        markerToStats[currMarker].slippage = currMarkSlipp;
+        append(currMarkerModelDir, "/model_");
+        append(currMarkerModelDir, to_string(currMarker.start));
+        append(currMarkerModelDir, "_");
+        append(currMarkerModelDir, currMarker.motif);
+        const char *model_in_file = toCString(currMarkerModelDir);
+        markerToStats[currMarker].regressionModel = load_model(model_in_file);
+        currMarkerModelDir = regressionModelDirectory;
     }
     cout << "Finished reading marker slippage." << endl;
     markerSlippageIn.close();
 }
 
-void readPnSlippage(ifstream& pnSlippageFile)
+map<string, Pair<double, int> > readPnSlippage(CharString pnSlippagePath, CharString iterationNumber, String<string> & PnIds)
 {
     string PnId;
     int nMarkers;
     double currPnSlipp;
+    string prevItNum;
+    int itNum;
+    lexicalCast(itNum, iterationNumber);
+    --itNum;
+    prevItNum = to_string(itNum);
+    map<string, Pair<double, int> > pnToSize;
+    append(pnSlippagePath, "_");
+    append(pnSlippagePath, prevItNum);
+    ifstream pnSlippageFile(toCString(pnSlippagePath));
     while (true)
     {
         pnSlippageFile >> PnId;
@@ -812,9 +877,12 @@ void readPnSlippage(ifstream& pnSlippageFile)
             break;
         pnToSize[PnId].i1= currPnSlipp;
         pnToSize[PnId].i2 = nMarkers;
+        appendValue(PnIds, PnId);
     }
     cout << "Finished reading pn Slippage, number of pns:" << pnToSize.size() << endl;
+    assert (pnToSize.size() == length(PnIds));
     pnSlippageFile.close();
+    return pnToSize;
 }
 
 inline bool exists(const std::string& name)
@@ -823,13 +891,13 @@ inline bool exists(const std::string& name)
   return (stat (name.c_str(), &buffer) == 0);
 }
 
-Pair<double, int> estimateSlippage(String<string> PnIds, map<Pair<string,Marker>, GenotypeInfo> PnAndMarkerToGenotype, Marker marker, map<Marker, Pair<Pair<LabelProps,double> ,model* > > currMarkerToSizeAndModel, int currItNum)
+Pair<double, int> estimateSlippage(String<string> PnIds, map<Pair<string,Marker>, GenotypeInfo> PnAndMarkerToGenotype, Marker marker, CharString currItNum, map<string, Pair<double, int> > pnToSize)
 {
     int nMissing = 0, nAvailable;
     vector<double> weights;
     vector<double> slippFragments;
     double currPnSlipp, currPvalSum = 0, weightSum = 0, fullMotifSlippageSum = 0, result, currMarkSlipp;
-    if (currItNum == 1)
+    if (atoi(toCString(currItNum)) == 1)
     {
         for (unsigned i = 0; i<length(PnIds); ++i)
         {
@@ -841,7 +909,7 @@ Pair<double, int> estimateSlippage(String<string> PnIds, map<Pair<string,Marker>
         currMarkSlipp = 0.5*(fullMotifSlippageSum/currPvalSum);
     }
     else
-        currMarkSlipp = currMarkerToSizeAndModel[marker].i1.i2;
+        currMarkSlipp = markerToStats[marker].slippage;
     for (unsigned i = 0; i<length(PnIds); ++i)
     {
         if ((PnAndMarkerToGenotype.count(Pair<string,Marker>(PnIds[i], marker)) == 0) || (PnAndMarkerToGenotype[Pair<string,Marker>(PnIds[i], marker)].pValueSum == 0))
@@ -879,13 +947,6 @@ Pair<double, int> estimateSlippage(String<string> PnIds, map<Pair<string,Marker>
     return Pair<double, int>(result, nAvailable);
 }
 
-void appendChromName(CharString& dir, CharString chromName)
-{
-    append(dir, "/");
-    append(dir, chromName);
-    append(dir, "/");
-}
-
 Pair<bool> genotypeIsConfident(GenotypeInfo& genotypeInfo)
 {
     bool A1ok = false, A2ok = false;
@@ -896,64 +957,146 @@ Pair<bool> genotypeIsConfident(GenotypeInfo& genotypeInfo)
     return Pair<bool>(A1ok, A2ok);
 }
 
+//For storing command line arguments
+struct MsGenotyperOptions
+{
+    CharString attDirChromNum, pnSlippageFile, markerList, intervalIndex, markerSlippageFile, regressionModelDirectory, iterationNumber, vcfOutputDirectory, vcfFileName;
+    unsigned firstPnIdx;
+} ;
+
+ArgumentParser::ParseResult parseCommandLine(MsGenotyperOptions & options, int argc, char const ** argv)
+{
+    ArgumentParser parser("msGenotyper");
+    setShortDescription(parser, "Microsatellite genotyper");
+    setVersion(parser, "1.3");
+    setDate(parser, "March 2019");
+    addUsageLine(parser, "\\fI-AD\\fP attributesDirectory/chromNum \\fI-PNS\\fP pnSlippageFile \\fI-ML\\fP markerList \\fI-I\\fP intervalIndex \\fI-MS\\fP markerSlippageFile \\fI-MD\\fP regressionModelDirectory \\fI-IN\\fP iterationNumber \\fI-FP\\fP firstPnIdx \\fI-VD\\fP vcfOutputDirectory \\fI-VN\\fP vcfFileName  ");
+    addDescription(parser, "Performs genptyping for all PNs in the pnSlippageFile over all markers in the markerFile. The genotypes are written to a file specified by the user.");
+
+    addOption(parser, ArgParseOption("AD", "attributesDirectory/chromNum", "Path to attributes files for the markers being genotyped.", ArgParseArgument::INPUT_FILE, "IN-DIR"));
+    setRequired(parser, "attributesDirectory/chromNum");
+
+    addOption(parser, ArgParseOption("PNS", "pnSlippageFile", "A file containing slippage rates for the pns to be genotyped.", ArgParseArgument::INPUT_FILE, "IN-FILE"));
+    setRequired(parser, "pnSlippageFile");
+
+    addOption(parser, ArgParseOption("ML", "markerList", "List of markers to genotype.", ArgParseArgument::INPUT_FILE, "IN-FILE"));
+    setRequired(parser, "markerList");
+
+    addOption(parser, ArgParseOption("I", "intervalIndex", "Index of the interval being processed", ArgParseArgument::STRING, "INDEX"));
+    setRequired(parser, "intervalIndex");
+
+    addOption(parser, ArgParseOption("MS", "markerSlippageFile", "A file containing estimated slippage rates for the microsatellites.", ArgParseArgument::OUTPUT_FILE, "OUT-FILE"));
+    setRequired(parser, "markerSlippageFile");
+
+    addOption(parser, ArgParseOption("MD", "regressionModelDirectory", "A directory where logistic regression models for all markers in the markerList are stored", ArgParseArgument::INPUTPREFIX, "IN-DIR"));
+    setRequired(parser, "regressionModelDirectory");
+
+    addOption(parser, ArgParseOption("IN", "iterationNumber", "Index of the iteration being performed, 1-based.", ArgParseArgument::STRING, "INDEX"));
+    setRequired(parser, "iterationNumber");
+
+    addOption(parser, ArgParseOption("FP", "firstPnIdx", "Index of first Pn in pnList within the attributeFile.", ArgParseArgument::INTEGER, "INTEGER"));
+    setRequired(parser, "firstPnIdx");
+
+    //Used if this is the final iteration
+    addOption(parser, ArgParseOption("VD", "vcfOutputDirectory", "A directory to write the vcf file to.", ArgParseArgument::OUTPUT_FILE, "OUT-DIR"));
+
+    addOption(parser, ArgParseOption("VN", "vcfFileName", "Name of vcf output file.", ArgParseArgument::OUTPUT_FILE, "OUT-FILE"));
+    
+    ArgumentParser::ParseResult res = parse(parser, argc, argv);
+    
+    if (res != ArgumentParser::PARSE_OK)
+        return res;
+    
+    getOptionValue(options.attDirChromNum, parser, "attributesDirectory/chromNum");
+    append(options.attDirChromNum, "/");
+    getOptionValue(options.pnSlippageFile, parser, "pnSlippageFile");
+    getOptionValue(options.markerList, parser, "markerList");
+    getOptionValue(options.intervalIndex, parser, "intervalIndex");
+    getOptionValue(options.markerSlippageFile, parser, "markerSlippageFile");
+    getOptionValue(options.regressionModelDirectory, parser, "regressionModelDirectory");
+    getOptionValue(options.iterationNumber, parser, "iterationNumber");
+    getOptionValue(options.firstPnIdx, parser, "firstPnIdx");
+
+    if (isSet(parser,"vcfOutputDirectory"))
+    {
+        getOptionValue(options.vcfOutputDirectory, parser, "vcfOutputDirectory");
+        getOptionValue(options.vcfFileName, parser, "vcfFileName");
+    }
+    
+    return ArgumentParser::PARSE_OK;
+}
+
+map<string, Pair<float> > readLabels(CharString modelAndLabelDir, Pair<int, string> marker, CharString iterationNumber)
+{
+    map<string, Pair<float> > pnToLabels;
+    append(modelAndLabelDir, "/");
+    append(modelAndLabelDir, to_string(marker.i1));
+    append(modelAndLabelDir, "_");
+    append(modelAndLabelDir, marker.i2);
+    string prevItNum;
+    int itNum;
+    lexicalCast(itNum, iterationNumber);
+    --itNum;
+    prevItNum = to_string(itNum);
+    append(modelAndLabelDir, prevItNum);
+    ifstream labelFile(toCString(modelAndLabelDir));
+    while (!labelFile.eof())
+    {
+        string PN_ID;
+        float A1, A2;
+        labelFile >> PN_ID;
+        if (PN_ID.length() == 0)
+            break;
+        labelFile >> A1 >> A2;
+        Pair<float> labels = Pair<float>(A1, A2);
+        pnToLabels[PN_ID] = labels;
+    }
+    labelFile.close();
+    return pnToLabels;
+}
+
+long int readOffSets(ifstream & attsFile, unsigned firstPnIdx)
+{
+    long int offset;
+    for (unsigned i = 1; i<=firstPnIdx; ++i)
+        attsFile >> offset;
+    while (offset == 0)
+        attsFile >> offset;
+    return offset;
+}
+
 int main(int argc, char const ** argv)
 {
     //Check arguments.
-    if (argc != 10 && argc != 12)
-    {
-        cerr << "USAGE: " << argv[0] << " attDir PN-slippageFile startCoordinate endCoordinate intervalIndex markerSlippageDir modelAndLabelDir iterationNumber chromosomeName vcfOutputDirectory vcfFileName \n";
-        return 1;
-    }
+    MsGenotyperOptions options;
+    ArgumentParser::ParseResult res = parseCommandLine(options, argc, argv);
+    if (res != seqan::ArgumentParser::PARSE_OK)
+        return res == seqan::ArgumentParser::PARSE_ERROR;
 
-    //Parse parameters
-    int startCoord = lexicalCast<int>(argv[3]), endCoord = lexicalCast<int>(argv[4]), currItNum = lexicalCast<int>(argv[8]), prevItNum = lexicalCast<int>(argv[8]) - 1;
-    CharString attributePath = argv[1], pnSlippagePath = argv[2], intervalIndex = argv[5], markerSlippageDir = argv[6], modelAndLabelDir = argv[7], currItNumStr = argv[8], prevItNumStr = to_string((long long int)prevItNum), chromName = argv[9];
-    append(pnSlippagePath, prevItNumStr);
-    append(attributePath, "/attributes");
-    appendChromName(attributePath, chromName);
-    appendChromName(modelAndLabelDir, chromName);
-    appendChromName(markerSlippageDir, chromName);
-    CharString modelAndLabelDirBase = modelAndLabelDir;
-    CharString markerSlippageDirBase = markerSlippageDir;
-    CharString attributePathBase = attributePath;
-    ifstream pnSlippageFile(toCString(pnSlippagePath));
-    ofstream markerSlippageOut; //Will use if I am estimating marker slippage.
-
-    string PnId, chrom, motif, nextWord, refRepSeq;
+    //Read marker and pn data
     String<string> PnIds;
-    std::set<Marker> markers;
-    bool writeVcf = false, loadModAndLab = true, enoughReads = true;
-    int start, end, numberOfReads, finalItNum = 5;
-    if (currItNum == finalItNum)
+    map<string, Pair<double, int> > pnToSize = readPnSlippage(options.pnSlippageFile, options.iterationNumber, PnIds); //pnslippage
+    String<Pair<int, string> > markersForGenotyping = readMarkers(options.markerList); //list of markers to genotype
+    bool loadModAndLab = true;
+    if (atoi(toCString(options.iterationNumber)) > 1) //previous estimates and regression models, if available
+        readMarkerSlippage(options.markerSlippageFile, options.iterationNumber, options.regressionModelDirectory);
+    else
+        loadModAndLab = false;
+
+    //Variable declarations and initializations
+    string PnId, chrom, motif, nextWord, refRepSeq, finalItNum = "5";   
+    int start, end, numberOfReads;
+    bool writeVcf = false, enoughReads = true;
+    if (options.iterationNumber == finalItNum)
         writeVcf = true;
     float refRepeatNum, winner, second;
-    //If this is not the first iteration, I read the marker slippage values from the previous iteration into the markerToSizeAndModel map.
-    if (currItNum > 1)
-    {
-        append(markerSlippageDir,"markerSlippage");
-        append(markerSlippageDir, prevItNumStr);
-        cout << "Path to marker slippage file: " << markerSlippageDir << endl;
-        readMarkerSlippage(markerSlippageDir, markerToSizeAndModel, startCoord, endCoord);
-        markerSlippageDir = markerSlippageDirBase;
-    }
-    //Else, this is the first iteration and I don't have any regression models or labels to load.
-    else
-    {
-        loadModAndLab = false;
-        //Check if markerSlipps folder exist and chr folder, otherwise create them
-        struct stat st;
-        if(stat(toCString(markerSlippageDirBase),&st) != 0)
-            mkdir(toCString(markerSlippageDirBase),0777);
-        if(stat(toCString(modelAndLabelDirBase),&st) != 0)
-            mkdir(toCString(modelAndLabelDirBase),0777);
-    }
-    append(markerSlippageDir,"markerSlippage");
-    append(markerSlippageDir, currItNumStr);
-    append(markerSlippageDir, "_");
-    append(markerSlippageDir, intervalIndex);
-    markerSlippageOut.open(toCString(markerSlippageDir));
-    //Read the slippage rate for all PNs into the pnToSize map.
-    readPnSlippage(pnSlippageFile);
+
+    //Make stream to write markerSlippage estimations to
+    append(options.markerSlippageFile, options.iterationNumber);
+    append(options.markerSlippageFile, "_");
+    append(options.markerSlippageFile, options.intervalIndex);
+    ofstream markerSlippageOut(toCString(options.markerSlippageFile));
+
     //Map from marker to all reads covering it
     map<Marker, String<AttributeLine> > mapPerMarker;
     //Count the total number of alleles in the population for each marker -- by checking the size of the set
@@ -962,105 +1105,122 @@ int main(int argc, char const ** argv)
     map<Pair<string,Marker>, GenotypeInfo> PnAndMarkerToGenotype;
 
     Marker marker;
-    string nextLine;
+    string nextLine, temp;
     AttributeLine currentLine;
     Pair<int, String<string> > numberOfWordsAndWords;
-    ifstream labelFile;
+    map<string, Pair<float> > pnToLabels;
 
-    //Iterate over all Pns I have slippage for and read from attribute files in the given interval
-    map<string, Pair<double, int> >::const_iterator pnEnd = pnToSize.end();
-    int nProcessedPns = 0;
-    for (map<string, Pair<double, int> >::iterator pnStart = pnToSize.begin(); pnStart != pnEnd; ++pnStart)
+    //Iterate over all markers in the markerList and read from their attribute files
+    int nProcessedMarkers = 0;
+    CharString attributePath = options.attDirChromNum;
+    for (unsigned i=0; i<length(markersForGenotyping); ++i)
     {
-        PnId = pnStart->first;
-        append(attributePath, PnId);
-        append(attributePath, ".gz");
-        std::ifstream attributeFileGz(toCString(attributePath), std::ios_base::in | std::ios_base::binary);
-        io::filtering_istream attributeFile;
-        attributeFile.push(io::gzip_decompressor());
-        attributeFile.push(attributeFileGz);
-        if (attributeFile.fail())
+        //Read labelPath for marker, if available
+        if (loadModAndLab)
+            pnToLabels = readLabels(options.regressionModelDirectory, markersForGenotyping[i], options.iterationNumber);
+        //Make path to attributefile for current marker
+        append(attributePath, to_string(markersForGenotyping[i].i1));
+        append(attributePath, "_");
+        append(attributePath, markersForGenotyping[i].i2);
+        bool is_gz = false;
+        io::filtering_istream attributeFile_gz;
+        ifstream attributeFile;
+        if (!ifstream(toCString(attributePath)))
         {
-            cout << "Unable to locate attribute file for " << PnId << " at " << attributePath << endl;
-            attributePath = attributePathBase;
-            continue;
+            is_gz = true;
+            append(attributePath, ".gz");
+            std::ifstream attributeFileGz(toCString(attributePath), std::ios_base::in | std::ios_base::binary);
+            attributeFile_gz.push(io::gzip_decompressor());
+            attributeFile_gz.push(attributeFileGz);
+            std::getline (attributeFile_gz, nextLine);
+            PnId = nextLine;
         }
-        ++nProcessedPns;
-        if (nProcessedPns % 1000==0)
-            cout << "Working on pn number: " << nProcessedPns << endl;
-        while (getline (attributeFile,nextLine))
+        else
+        {
+            attributeFile.open(toCString(attributePath));
+            long int offset = readOffSets(attributeFile, options.firstPnIdx);
+            if (offset != 0)
+                attributeFile.seekg(offset);
+            else 
+                continue;
+        }
+        ++nProcessedMarkers;
+        if (nProcessedMarkers % 100==0)
+            cout << "Working on marker number: " << nProcessedMarkers << endl;
+        unsigned pnsFound = 0;
+        while (is_gz ? std::getline (attributeFile_gz, nextLine) : std::getline (attributeFile, nextLine) && pnsFound < length(PnIds))
         {
             if (nextLine.length() == 0)
                 continue;
             numberOfWordsAndWords = countNumberOfWords(nextLine);
             if (numberOfWordsAndWords.i1 == 1)
             {
-                PnId = nextLine;
-                appendValue(PnIds,PnId);
-                if (loadModAndLab)
+                //If I have passed the last pn to genotype 
+                if (nextLine > pnToSize.rbegin()->first)
+                    break;
+                //Is this PN on my list?
+                if (pnToSize.count(nextLine) != 0)
                 {
-                    if (labelFile.is_open())
-                        labelFile.close();
-                    append(modelAndLabelDir,PnId);
-                    append(modelAndLabelDir,"labels");
-                    append(modelAndLabelDir, prevItNumStr);
-                    labelFile.open(toCString(modelAndLabelDir));
-                    if(labelFile.fail())
-                        cout << "Could not open label file: " << modelAndLabelDir << endl;
-                    modelAndLabelDir = modelAndLabelDirBase;
+                    ++pnsFound;
+                    PnId = nextLine;
+                    //cout << "Found data for " << PnId << "at marker " << markersForGenotyping[i].i1 << "_" << markersForGenotyping[i].i2 << endl;
                 }
+                //If it's not I have to read past it.
+                else
+                {
+                    if (is_gz)
+                    {
+                        attributeFile_gz >> temp;
+                        attributeFile_gz >> temp;
+                        attributeFile_gz >> temp;
+                        attributeFile_gz >> temp;
+                        attributeFile_gz >> temp;
+                        attributeFile_gz >> numberOfReads;
+                        attributeFile_gz >> temp;
+                        attributeFile_gz >> temp;
+                        attributeFile_gz >> temp;
+                        for (unsigned i = 0; i <= numberOfReads; ++i)
+                            getline (attributeFile_gz,nextLine);
+                    }
+                    else
+                    {
+                        attributeFile >> temp;
+                        attributeFile >> temp;
+                        attributeFile >> temp;
+                        attributeFile >> temp;
+                        attributeFile >> temp;
+                        attributeFile >> numberOfReads;
+                        attributeFile >> temp;
+                        attributeFile >> temp;
+                        attributeFile >> temp;
+                        for (unsigned i = 0; i <= numberOfReads; ++i)
+                            getline (attributeFile,nextLine);
+                    }
+                }
+                continue;
             }
             if (numberOfWordsAndWords.i1 == 9)
             {
                 marker.chrom = numberOfWordsAndWords.i2[0];
-                marker.start = lexicalCast<int>(numberOfWordsAndWords.i2[1]);
-                marker.end = lexicalCast<int>(numberOfWordsAndWords.i2[2]);
+                lexicalCast(marker.start, numberOfWordsAndWords.i2[1]);
+                lexicalCast(marker.end, numberOfWordsAndWords.i2[2]);
                 marker.motif = numberOfWordsAndWords.i2[3];
-                marker.refRepeatNum = lexicalCast<float>(numberOfWordsAndWords.i2[4]);
-                numberOfReads = lexicalCast<int>(numberOfWordsAndWords.i2[5]);
+                lexicalCast(marker.refRepeatNum, numberOfWordsAndWords.i2[4]);
+                lexicalCast(numberOfReads,numberOfWordsAndWords.i2[5]);
                 marker.refRepSeq = numberOfWordsAndWords.i2[6];
-                //If I am in front of the interval, I move to the next marker.
-                if (marker.start < startCoord)
-                {
-                    for (unsigned i = 0; i < numberOfReads; ++i)
-                    {
-                        getline (attributeFile,nextLine);
-                    }
-                    if (loadModAndLab)
-                        getline(labelFile, nextLine);
-                    continue;
-                }
-                //If I have passed the interval, I move on to the next pn.
-                if (marker.start > endCoord)
-                    break;
-                //Otherwise the marker is in the interval and I process it.
-                markers.insert(marker);
                 if (loadModAndLab)
                 {
-                    labelFile >> winner;
-                    labelFile >> second;
-                    if (markerToSizeAndModel[marker].i2 == NULL || markerToSizeAndModel.count(marker) == 0)
-                    {
-                        append(modelAndLabelDir, "/");
-                        append(modelAndLabelDir, marker.chrom);
-                        append(modelAndLabelDir, "_");
-                        stringstream startStr;
-                        startStr << marker.start;
-                        append(modelAndLabelDir, startStr.str());
-                        startStr.clear();
-                        startStr.str("");
-                        const char *model_in_file = toCString(modelAndLabelDir);
-                        markerToSizeAndModel[marker].i2 = load_model(model_in_file);
-                        modelAndLabelDir = modelAndLabelDirBase;
-                    }
+                    winner = pnToLabels[PnId].i1;
+                    second = pnToLabels[PnId].i2;
                 }
                 else
                 {
-                    winner = lexicalCast<float>(numberOfWordsAndWords.i2[7]);
-                    second = lexicalCast<float>(numberOfWordsAndWords.i2[8]);
+                    lexicalCast(winner, numberOfWordsAndWords.i2[7]);
+                    lexicalCast(second, numberOfWordsAndWords.i2[8]);
                 }
-                markerToAlleles[marker].insert(winner);
-                markerToAlleles[marker].insert(second);
+                markerToStats[marker].alleles.insert(winner);
+                markerToStats[marker].alleles.insert(second);
+                continue;
             }
             if (numberOfWordsAndWords.i1 == 11)
             {
@@ -1073,39 +1233,37 @@ int main(int argc, char const ** argv)
                 for (unsigned i = 0; i < numberOfReads; ++i)
                 {
                     if (i == 0)
-                        currentLine = parseNextLine(winner, second, attributeFile, marker, PnId, PnAndMarkerToGenotype, numberOfWordsAndWords.i2, true, loadModAndLab, enoughReads);
+                        currentLine = parseNextLine(winner, second, is_gz, attributeFile, attributeFile_gz, marker, PnId, PnAndMarkerToGenotype, numberOfWordsAndWords.i2, true, loadModAndLab, enoughReads);
                     else
-                        currentLine = parseNextLine(winner, second, attributeFile, marker, PnId, PnAndMarkerToGenotype, numberOfWordsAndWords.i2, false, loadModAndLab, enoughReads);
+                        currentLine = parseNextLine(winner, second, is_gz, attributeFile, attributeFile_gz, marker, PnId, PnAndMarkerToGenotype, numberOfWordsAndWords.i2, false, loadModAndLab, enoughReads);
                     appendValue(mapPerMarker[marker],currentLine);
                 }
                 enoughReads = true;
+                continue;
             }
             if (numberOfWordsAndWords.i1 != 1 && numberOfWordsAndWords.i1 != 9 && numberOfWordsAndWords.i1 != 11)
                 cerr << "Format error in attribute file!" << endl;
         }
-        attributePath = attributePathBase;
-        labelFile.close();
+        attributePath = options.attDirChromNum;
     }
-    chrom = marker.chrom;
+    pnToLabels.clear();
     cout << "Reading data from input complete." << endl;
 
     //Open vcf stream and make header if the writeVcf switch is on
-    VcfStream out;
+    VcfFileOut out;
     if (writeVcf)
     {
-        CharString outputDirectory = argv[10];
-        CharString outputFileName = argv[11];
-        append(outputDirectory, "/");
-        append(outputDirectory, outputFileName);
-        append(outputDirectory, "_");
-        append(outputDirectory, intervalIndex);
-        append(outputDirectory, ".vcf");
-        bool outOk = open(out,toCString(outputDirectory), VcfStream::WRITE);
+        append(options.vcfOutputDirectory, "/");
+        append(options.vcfOutputDirectory, options.vcfFileName);
+        append(options.vcfOutputDirectory, "_");
+        append(options.vcfOutputDirectory, options.intervalIndex);
+        append(options.vcfOutputDirectory, ".vcf");
+        ofstream outputFile(toCString(options.vcfOutputDirectory));
+        open(out, outputFile);
         makeVcfHeader(out, PnIds, chrom);
     }
 
     cout << "Number of markers: " << mapPerMarker.size() << endl;
-    cout << "Number of pns: " << length(PnIds) << endl;
 
     double *prob_estimates = NULL;
     double predict_label;
@@ -1147,8 +1305,6 @@ int main(int argc, char const ** argv)
     Pair<double, int> slippAndNavail;
 
     //Loop over map from Marker to string<AttributeLine> and train model for each marker and use it to determine genotype
-    //map<Marker, String<AttributeLine> >::iterator itEnd = mapPerMarker.end();
-    //for (map<Marker, String<AttributeLine> >::iterator it = mapPerMarker.begin(); it != itEnd; ++it)
     map<Marker, String<AttributeLine> >::iterator it = mapPerMarker.begin();
     while (mapPerMarker.size()>0)
     {
@@ -1157,24 +1313,25 @@ int main(int argc, char const ** argv)
         String<AttributeLine>& currentMarker = it->second;
         probBig.l = length(currentMarker);
         cout << "Starting marker number: " << z << " with start coordinate: " << thisMarker.start << endl;
-        double geomP = 1/(fmod(markerToStepSum[thisMarker]/(float)length(currentMarker),1.0)+1);
-        allelesAtMarker = markerToAlleles[thisMarker];
+        double geomP = 1/(fmod(markerToStats[thisMarker].stepSum/(float)length(currentMarker),1.0)+1);
+        allelesAtMarker = markerToStats[thisMarker].alleles;
         numOfAlleles = allelesAtMarker.size();
-        markerToNallelesAndStutter[thisMarker] = Pair<int,double>(numOfAlleles, geomP);
-        markerToAlleles[thisMarker].clear();
+        markerToStats[thisMarker].nAlleles = numOfAlleles;
+        markerToStats[thisMarker].stutter = geomP;
+        markerToStats[thisMarker].alleles.clear();
         markerToAlleleFreqs[thisMarker].i1.clear();
-        //Estimate marker slippage and update in markerToSizeAndModel map
-        slippAndNavail = estimateSlippage(PnIds, PnAndMarkerToGenotype, it->first, markerToSizeAndModel, currItNum);
-        markerToSizeAndModel[it->first].i1.i2 = std::max((double)0.0,slippAndNavail.i1);
+        //Estimate marker slippage and update in markerToStats map
+        slippAndNavail = estimateSlippage(PnIds, PnAndMarkerToGenotype, it->first, options.iterationNumber, pnToSize);
+        markerToStats[it->first].slippage = std::max((double)0.0,slippAndNavail.i1);
         nAvailable = slippAndNavail.i2;
         //Reads with label 2 are not included in training
-        prob.l = length(currentMarker) - markerToSizeAndModel[it->first].i1.i1.p2.i1;
-        //Now I "nullSet" the markerToSizeAndModel map for the marker I am looking at so I can update it when I relabel the reads
-        markerToSizeAndModel[it->first].i1.i1.p1 = Pair<int,double>(0,0);
-        markerToSizeAndModel[it->first].i1.i1.p2 = Pair<int,double>(0,0);
-        markerToSizeAndModel[it->first].i1.i1.p3 = Pair<int,double>(0,0);
+        prob.l = length(currentMarker) - markerToStats[it->first].slippCount.p2.i1;
+        //Now I "nullSet" the labelProps in the markerToStats map for the marker I am looking at so I can update it when I relabel the reads
+        markerToStats[it->first].slippCount.p1 = Pair<int,double>(0,0);
+        markerToStats[it->first].slippCount.p2 = Pair<int,double>(0,0);
+        markerToStats[it->first].slippCount.p3 = Pair<int,double>(0,0);
         //Nullset the averageStepSize map
-        markerToStepSum[it->first] = 0.0;
+        markerToStats[it->first].stepSum = 0.0;
         int idx = 0;
         prob.y = Malloc(double,prob.l);
         prob.x = (feature_node **) malloc(prob.l * sizeof(feature_node *));
@@ -1227,23 +1384,23 @@ int main(int argc, char const ** argv)
                 }
                 genotypesToConsider = makeGenotypes(allelesToConsider, thisMarker.refRepeatNum).genotypes;
                 //make decision about genotype for PnId at the current marker.
-                changed = determineGenotype(reads, markerToSizeAndModel[it->first].i1.i2+pnToSize[PnId].i1, genotypesToConsider, numOfAlleles, it->first.motif.size(), geomP);
+                changed = determineGenotype(reads, markerToStats[it->first].slippage+pnToSize[PnId].i1, genotypesToConsider, numOfAlleles, it->first.motif.size(), geomP);
                 PnAndMarkerToGenotype[Pair<string,Marker>(PnId,it->first)] = changed.i1;
                 Pair<bool> alleleConfidence = genotypeIsConfident(changed.i1);
                 if (alleleConfidence.i1)
-                    markerToTrueAlleles[it->first].insert(changed.i1.genotype.i1);
+                    markerToStats[it->first].trueAlleles.insert(changed.i1.genotype.i1);
                 if (alleleConfidence.i2)
-                    markerToTrueAlleles[it->first].insert(changed.i1.genotype.i2);
+                    markerToStats[it->first].trueAlleles.insert(changed.i1.genotype.i2);
                 if (changed.i2)
                 {
-                    markerToAlleles[it->first].insert(changed.i1.genotype.i1);
-                    markerToAlleles[it->first].insert(changed.i1.genotype.i2);
+                    markerToStats[it->first].alleles.insert(changed.i1.genotype.i1);
+                    markerToStats[it->first].alleles.insert(changed.i1.genotype.i2);
                 }
                 ++markerToAlleleFreqs[it->first].i1[changed.i1.genotype.i1];
                 ++markerToAlleleFreqs[it->first].i1[changed.i1.genotype.i2];
                 //If I am estimating the marker slippage then I should update map from Pn to labels. (before I update PnId to currentLine.PnId)
                 if (!writeVcf)
-                    append(pnToLabels[PnId],Pair<float>(changed.i1.genotype.i1, changed.i1.genotype.i2));
+                    pnToLabels[PnId] = Pair<float>(changed.i1.genotype.i1, changed.i1.genotype.i2);
                 PnId = currentLine.PnId;
                 clear(reads);
             }
@@ -1270,41 +1427,50 @@ int main(int argc, char const ** argv)
             allelesToConsider.insert(currAllele);
         }
         genotypesToConsider = makeGenotypes(allelesToConsider, thisMarker.refRepeatNum).genotypes;
-        changed = determineGenotype(reads, markerToSizeAndModel[it->first].i1.i2+pnToSize[PnId].i1, genotypesToConsider, numOfAlleles, it->first.motif.size(), geomP);
+        changed = determineGenotype(reads, markerToStats[it->first].slippage+pnToSize[PnId].i1, genotypesToConsider, numOfAlleles, it->first.motif.size(), geomP);
         PnAndMarkerToGenotype[Pair<string,Marker>(PnId,it->first)] = changed.i1;
         Pair<bool> alleleConfidence = genotypeIsConfident(changed.i1);
         if (alleleConfidence.i1)
-            markerToTrueAlleles[it->first].insert(changed.i1.genotype.i1);
+            markerToStats[it->first].trueAlleles.insert(changed.i1.genotype.i1);
         if (alleleConfidence.i2)
-            markerToTrueAlleles[it->first].insert(changed.i1.genotype.i2);
+            markerToStats[it->first].trueAlleles.insert(changed.i1.genotype.i2);
         if (changed.i2)
         {
-            markerToAlleles[it->first].insert(changed.i1.genotype.i1);
-            markerToAlleles[it->first].insert(changed.i1.genotype.i2);
+            markerToStats[it->first].alleles.insert(changed.i1.genotype.i1);
+            markerToStats[it->first].alleles.insert(changed.i1.genotype.i2);
         }
         ++markerToAlleleFreqs[it->first].i1[changed.i1.genotype.i1];
         ++markerToAlleleFreqs[it->first].i1[changed.i1.genotype.i2];
-        //If I am estimating the marker slippage then here is where I update the pn to labels for the last PN.
+        //If I am estimating the marker slippage then here is where I update the pn to labels for the last PN and write labels for this marker
         if (!writeVcf)
-            append(pnToLabels[PnId],Pair<float>(changed.i1.genotype.i1, changed.i1.genotype.i2));
+        {
+            pnToLabels[PnId] = Pair<float>(changed.i1.genotype.i1, changed.i1.genotype.i2);
+            CharString labelOutPath = options.regressionModelDirectory;
+            append(labelOutPath, "/");
+            append(labelOutPath, to_string(it->first.start));
+            append(labelOutPath, "_");
+            append(labelOutPath, it->first.motif);
+            append(labelOutPath, options.iterationNumber);
+            ofstream labelFile(toCString(labelOutPath));
+            for (auto& label: pnToLabels)
+                labelFile << label.first << "\t" << label.second.i1 << "\t" << label.second.i2 << "\n";
+            pnToLabels.clear();
+        }
         //Save logistic regression model to output file so I can use it in pn-slippage estimation
-        stringstream zstr;
-        zstr << thisMarker.chrom;
-        append(modelAndLabelDir, zstr.str());
-        append(modelAndLabelDir, "_");
-        zstr.str("");
-        zstr.clear();
-        zstr << thisMarker.start;
-        append(modelAndLabelDir, zstr.str());
-        const char *model_out_file = toCString(modelAndLabelDir);
+        CharString regressionModelDirectory = options.regressionModelDirectory;
+        append(regressionModelDirectory, "/model_");
+        append(regressionModelDirectory, to_string(it->first.start));
+        append(regressionModelDirectory, "_");
+        append(regressionModelDirectory, it->first.motif);
+        const char *model_out_file = toCString(regressionModelDirectory);
         if (save_model(model_out_file,model_) != 0)
                 cout << "Unable to save model for marker number " << z << endl;
-        modelAndLabelDir = modelAndLabelDirBase;
+
         //Write vcf record for the marker I just finished.
         if (writeVcf)
         {
             //Check the number of alleles in the population, should be 2 or higher to be considered polymorphic.
-            if (markerToTrueAlleles[thisMarker].size() < 2)
+            if (markerToStats[thisMarker].trueAlleles.size() < 2)
             {
                 cout << "Not enough alleles at marker " << z << endl;
                 mapPerMarker.erase(thisMarker);
@@ -1313,14 +1479,14 @@ int main(int argc, char const ** argv)
                 continue;
             }
             //Make a String<Pair<float> > which contains a list of genotypes
-            cout << "Number of verified alleles: " << markerToTrueAlleles[thisMarker].size() << endl;
+            cout << "Number of verified alleles: " << markerToStats[thisMarker].trueAlleles.size() << endl;
             //Have to add ref allele to true allele set in case no one has it.
-            markerToTrueAlleles[thisMarker].insert(thisMarker.refRepeatNum);
-            genotypesAtThisMarker = makeGenotypes(markerToTrueAlleles[thisMarker], thisMarker.refRepeatNum);
+            markerToStats[thisMarker].trueAlleles.insert(thisMarker.refRepeatNum);
+            genotypesAtThisMarker = makeGenotypes(markerToStats[thisMarker].trueAlleles, thisMarker.refRepeatNum);
             //Compute abs(allele1-allele2)*allele1Freq*allele2Freq for all genotypes and return average of those, estimate of distance between alleles.
-            alleleDistance = computeAlleleDist(genotypesAtThisMarker.genotypes, markerToAlleleFreqs[it->first].i1, PnsAtMarker);
+            //alleleDistance = computeAlleleDist(genotypesAtThisMarker.genotypes, markerToAlleleFreqs[it->first].i1, PnsAtMarker);
             //First fill marker specific fields of vcfRecord
-            record = fillRecordMarker(thisMarker, markerToTrueAlleles[thisMarker]);
+            record = fillRecordMarker(thisMarker, markerToStats[thisMarker].trueAlleles);
             //Loop over Pns and fill in PN specific fields of vcfRecord for each PN
             for (unsigned i = 0; i<length(PnIds); ++i)
             {
@@ -1329,7 +1495,7 @@ int main(int argc, char const ** argv)
                 if ((PnAndMarkerToGenotype.count(Pair<string,Marker>(thisPn, thisMarker)) != 0))
                 {
                     genotype = PnAndMarkerToGenotype[Pair<string,Marker>(thisPn, thisMarker)];
-                    fillRecordPn(genotype, record, genotypesAtThisMarker,markerToTrueAlleles[thisMarker], thisMarker);
+                    fillRecordPn(genotype, record, genotypesAtThisMarker,markerToStats[thisMarker].trueAlleles, thisMarker);
                     PnAndMarkerToGenotype.erase(Pair<string,Marker>(thisPn, thisMarker));
                 }
                 //If a decision has not been made I add a CharString with no decision(0:0,0,0,0....etc) to the set to maintain order of Pns vs genotypeInfos in output
@@ -1337,7 +1503,7 @@ int main(int argc, char const ** argv)
                 {
                     CharString gtInfo = "./.:";
                     //Adding alleleDepth zeros
-                    for (unsigned i=0; i<markerToTrueAlleles[thisMarker].size(); ++i)
+                    for (unsigned i=0; i<markerToStats[thisMarker].trueAlleles.size(); ++i)
                         append(gtInfo,"0,");
                     eraseBack(gtInfo);
                     //Adding read depth zero
@@ -1349,55 +1515,22 @@ int main(int argc, char const ** argv)
                     appendValue(record.genotypeInfos, gtInfo);
                 }
             }
-            ss << markerToTrueAlleles[thisMarker].size();
+            ss << markerToStats[thisMarker].trueAlleles.size();
             str = ss.str();
             record.filter = ".";
             stringClear(ss,str);
             //After adding info for all PNs at thisMarker I write the record to the vcf output file
-            if (writeRecord(out, record) != 0)
-                cerr << "ERROR: Problem writing VCF-output file." << endl;
+            writeRecord(out, record);
             clear(record);
         }
         markerToAlleleFreqs[it->first].i2 = PnsAtMarker;
         PnToAlleles.clear();
-        markerSlippageOut << thisMarker.chrom << "\t" << thisMarker.start << "\t" << thisMarker.end << "\t" << thisMarker.motif << "\t" << thisMarker.refRepeatNum << "\t" << thisMarker.refRepSeq << "\t" << setprecision(4) << fixed << markerToSizeAndModel[thisMarker].i1.i2 << "\t" << nAvailable << "\t" << markerToNallelesAndStutter[thisMarker].i1 << "\t" << markerToNallelesAndStutter[thisMarker].i2 << endl;
-        cout << thisMarker.start << " totalSlipp: " << setprecision(4) << fixed << markerToSizeAndModel[thisMarker].i1.i2 << endl;
+        markerSlippageOut << thisMarker.chrom << "\t" << thisMarker.start << "\t" << thisMarker.end << "\t" << thisMarker.motif << "\t" << thisMarker.refRepeatNum << "\t" << thisMarker.refRepSeq << "\t" << setprecision(4) << fixed << markerToStats[thisMarker].slippage << "\t" << nAvailable << "\t" << markerToStats[thisMarker].nAlleles << "\t" << markerToStats[thisMarker].stutter << endl;
+        cout << thisMarker.start << " totalSlipp: " << setprecision(4) << fixed << markerToStats[thisMarker].slippage << endl;
         cout << "Finished marker number: " << z << endl;
         mapPerMarker.erase(thisMarker);
         it = mapPerMarker.begin();
         ++z;
-    }
-    String<Pair<float> > labels;
-    if (!writeVcf)
-    {
-        ofstream labelsOut;
-        for (unsigned i = 0; i<length(PnIds); ++i)
-        {
-            labels = pnToLabels[PnIds[i]];
-            if (length(labels) == 0)
-                continue;
-            append(modelAndLabelDir, PnIds[i]);
-            append(modelAndLabelDir, "labels");
-            append(modelAndLabelDir, currItNumStr);
-            append(modelAndLabelDir, "_");
-            append(modelAndLabelDir, intervalIndex);
-            labelsOut.open(toCString(modelAndLabelDir));
-            for (unsigned j = 0; j<length(labels); ++j)
-                labelsOut << labels[j].i1 << "\t" << labels[j].i2 << endl;
-            /*if (currItNum > 1)
-            {
-                modelAndLabelDir = modelAndLabelDirBase;
-                append(modelAndLabelDir, PnIds[i]);
-                append(modelAndLabelDir, "labels");
-                append(modelAndLabelDir, prevItNumStr);
-                append(modelAndLabelDir, "_");
-                append(modelAndLabelDir, intervalIndex);
-                if (remove(toCString(modelAndLabelDir)) !=0)
-                    cout << "Remove operation of old labelFile failed with code " << errno << endl;
-            }*/
-            modelAndLabelDir = modelAndLabelDirBase;
-            labelsOut.close();
-        }
     }
     cout << "Finished determining genotypes" << endl;
     return 0;
