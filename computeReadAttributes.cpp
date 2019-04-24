@@ -12,8 +12,6 @@
 #include <fstream>
 #include <sys/stat.h>
 #include <ctime>
-#include <climits>
-#include "ssw_cpp.h"
 
 using namespace std;
 using namespace seqan;
@@ -27,7 +25,6 @@ struct STRinfo {
     float refRepeatNum; //Number of repeats in reference sequence
     Dna5String refBf;
     Dna5String refAf;
-    Dna5String refRepSeq;
     float refRepPurity;
     unsigned minFlankLeft;
     unsigned minFlankRight;
@@ -42,7 +39,6 @@ struct STRinfoSmall {
     int STRend;
     CharString motif;
     float refRepeatNum; //Number of repeats in reference sequence
-    CharString refRepSeq;
 } ;
 
 //So I can map from STRinfoSmall in finalMap
@@ -63,11 +59,8 @@ struct ReadInfo {
     float purity;
     float ratioOver20In;
     float ratioOver20After;
-    unsigned sequenceLength;
     unsigned mateEditDist;
-    bool wasUnaligned;
     Dna5String repSeq; //Repeat sequence in read
-    Dna5String refRepSeq; //Repeat sequence in reference
 } ;
 
 //structure to store read information
@@ -79,9 +72,7 @@ struct ReadPairInfo {
     float purity;
     float ratioOver20In;
     float ratioOver20After;
-    unsigned sequenceLength;
     unsigned mateEditDist;
-    bool wasUnaligned;
     CharString repSeq; //Repeat sequence in read
 } ;
 
@@ -357,12 +348,9 @@ Pair<Triple<CharString, CharString, int>,ReadInfo> computeReadInfo(BamAlignmentR
     Triple<CharString, CharString, int> mapKey = Triple<CharString, CharString, int>(record.qName, markerInfo.chrom, markerInfo.STRstart);
 
     //Insert values into mapValue in returnPair
-    mapValue.sequenceLength = length(record.seq);
-    //cout << "Sequence length: " << mapValue.sequenceLength << "\n";
     mapValue.STRend = markerInfo.STRend;
     mapValue.motif = markerInfo.motif;
     mapValue.refRepeatNum = markerInfo.refRepeatNum;
-    mapValue.refRepSeq = markerInfo.refRepSeq;
 
     int scoreBf, scoreAf, startCoord, endCoord, leftFlank, rightFlank;
     float rBf, rAf;
@@ -370,7 +358,7 @@ Pair<Triple<CharString, CharString, int>,ReadInfo> computeReadInfo(BamAlignmentR
     //This is the best case scenario, then I skip flanking alignment
     before_8 = infix(record.seq, max(0,coordinates.i1.i1-8), coordinates.i1.i1);
     //cout << "Made before guy of length: " << length(before_8) << ".\n";
-    after_8 = infix(record.seq, min(coordinates.i1.i2+1, (int)(mapValue.sequenceLength-1)),min(coordinates.i1.i2+9,(int)mapValue.sequenceLength));
+    after_8 = infix(record.seq, min(coordinates.i1.i2+1, (int)(length(record.seq)-1)),min(coordinates.i1.i2+9,(int)length(record.seq)));
     //cout << "Made after guy of length: " << length(after_8) << ".\n";
     bool doBeforeAlign = true, doAfterAlign = true;
     if (length(before_8) == 8)
@@ -515,8 +503,6 @@ Pair<Triple<CharString, CharString, int>,ReadInfo> computeReadInfo(BamAlignmentR
         cout << "End coord: " << endCoord << endl;
         //cout << "Infix command is: infix(" << startCoord << "," << oldStartCoord+endCoord+1 << ")" << endl;
         //cout << "Repeat purity: " << getPurity(markerInfo.motif,infix(record.seq, startCoord, oldStartCoord+endCoord+1)) << endl;
-        //cout << "Call to getPurity is getPurity(" << markerInfo.motif << "," << markerInfo.refRepSeq << ")" << "\n";
-        //cout << "Reference repeat purity: " << getPurity(markerInfo.motif, markerInfo.refRepSeq) << endl;
     }*/
 
     float refRepPurity = markerInfo.refRepPurity;
@@ -750,7 +736,6 @@ String<STRinfo> readMarkerinfo(CharString & markerInfoFile, int minFlank, CharSt
         currInfo.refAf = refAfString;
         string refRepSeq;
         markerFile >> refRepSeq;
-        currInfo.refRepSeq = refRepSeq;
         currInfo.refRepeatNum = (float)refRepSeq.length()/(float)motifString.length();
         markerFile >> currInfo.minFlankLeft;
         markerFile >> currInfo.minFlankRight;
@@ -957,7 +942,6 @@ int main(int argc, char const ** argv)
                     if (((endCoordinate-startCoordinate+1 < length(record.seq)-2*minFlank) && (endCoordinate > startCoordinate)) || ((endCoordinate > startCoordinate)&&(getPurity(markers[currentMarker].motif, infixWithLength(record.seq, startCoordinate, endCoordinate-startCoordinate+1))>0.75*markers[currentMarker].refRepPurity)))
                     {
                         Pair<Triple<CharString, CharString, int>,ReadInfo> keyValuePair = computeReadInfo(record, markers[currentMarker], coordinates, minFlank, maxRepeatLength);
-                        keyValuePair.i2.wasUnaligned = false;
                         if (myMap.count(keyValuePair.i1) == 0)
                         {
                             if (keyValuePair.i2.numOfRepeats == 666)
@@ -1030,7 +1014,6 @@ int main(int argc, char const ** argv)
                         if (((endCoordinate-startCoordinate+1 < length(record.seq)-2*minFlank) && (endCoordinate > startCoordinate)) || ((endCoordinate > startCoordinate)&&(getPurity(markers[currentMarker].motif, infixWithLength(record.seq, startCoordinate, endCoordinate-startCoordinate+1))>0.75*markers[currentMarker].refRepPurity)))
                         {
                             Pair<Triple<CharString, CharString, int>,ReadInfo> keyValuePair = computeReadInfo(record, markers[currentMarker], coordinates, minFlank, maxRepeatLength);
-                            keyValuePair.i2.wasUnaligned = true;
                             if (myMap.count(keyValuePair.i1) == 0)
                             {
                                 keyValuePair.i2.mateEditDist = 666;
@@ -1077,7 +1060,6 @@ int main(int argc, char const ** argv)
             currentSTR.STRend = it->second.STRend;
             currentSTR.motif = it->second.motif;
             currentSTR.refRepeatNum = it->second.refRepeatNum;
-            currentSTR.refRepSeq = it->second.refRepSeq;
             //Create value
             ReadPairInfo currentReadPair;
             currentReadPair.numOfRepeats = it->second.numOfRepeats;
@@ -1087,10 +1069,8 @@ int main(int argc, char const ** argv)
             currentReadPair.purity = it->second.purity;
             currentReadPair.ratioOver20In = it->second.ratioOver20In;
             currentReadPair.ratioOver20After = it->second.ratioOver20After;
-            currentReadPair.sequenceLength = it->second.sequenceLength;
             currentReadPair.mateEditDist = it->second.mateEditDist;
             currentReadPair.repSeq = it->second.repSeq;
-            currentReadPair.wasUnaligned = it->second.wasUnaligned;
             //Put the lime in the coconut
             appendValue(finalMap[currentSTR].i3, currentReadPair);
             finalMap[currentSTR].i1.insert(currentReadPair.numOfRepeats);
@@ -1159,7 +1139,7 @@ int main(int argc, char const ** argv)
             if (secondFreq < 0.10*winnerFreq)
                 second = winner;
             //Write attributes and initial labelling to output file
-            fprintf(startAndEndToStreamAndOffsets[mapKey].i2,"%s\t%u\t%u\t%s\t%.1f\t%u\t%s\t%.1f\t%.1f\n",toCString(it->first.chrom),it->first.STRstart,it->first.STRend,toCString(it->first.motif),it->first.refRepeatNum,length(readPairs),toCString(it->first.refRepSeq),winner,second);
+            fprintf(startAndEndToStreamAndOffsets[mapKey].i2,"%s\t%u\t%u\t%s\t%.1f\t%u\t%.1f\t%.1f\n",toCString(it->first.chrom),it->first.STRstart,it->first.STRend,toCString(it->first.motif),it->first.refRepeatNum,length(readPairs),winner,second);
             for (unsigned i=0; i < length(readPairs); ++i)
             {
                 ReadPairInfo printMe = readPairs[i];
@@ -1167,7 +1147,7 @@ int main(int argc, char const ** argv)
                 if (printMe.numOfRepeats < 0)
                     continue;
                 //Print attributes to output file.
-                fprintf(startAndEndToStreamAndOffsets[mapKey].i2,"%.1f\t%.1f\t%.1f\t%u\t%u\t%.2f\t%.2f\t%.2f\t%u\t%u\t%s\n",printMe.numOfRepeats,printMe.ratioBf,printMe.ratioAf,printMe.locationShift,printMe.mateEditDist,printMe.purity,printMe.ratioOver20In,printMe.ratioOver20After,printMe.sequenceLength,printMe.wasUnaligned,toCString(printMe.repSeq));
+                fprintf(startAndEndToStreamAndOffsets[mapKey].i2,"%.1f\t%.1f\t%.1f\t%u\t%u\t%.2f\t%.2f\t%.2f\t%s\n",printMe.numOfRepeats,printMe.ratioBf,printMe.ratioAf,printMe.locationShift,printMe.mateEditDist,printMe.purity,printMe.ratioOver20In,printMe.ratioOver20After,toCString(printMe.repSeq));
             }
         }
         //Flush last stream before starting next PN

@@ -48,8 +48,6 @@ struct AttributeLine {
     float purity;
     float ratioOver20In;
     float ratioOver20After;
-    unsigned sequenceLength;
-    bool wasUnaligned;
     int label;
     double pValue;
     string repSeq;
@@ -62,7 +60,6 @@ struct Marker {
     int end;
     string motif;
     float refRepeatNum;
-    string refRepSeq;
 } ;
 
 //For storing number of members in each class and their pValue-sum
@@ -137,12 +134,8 @@ void fillProblemX(int idx, AttributeLine currentLine, problem& myProb)
     myProb.x[idx][5].value = currentLine.ratioOver20In;
     myProb.x[idx][6].index = 7;
     myProb.x[idx][6].value = currentLine.ratioOver20After;
-    myProb.x[idx][7].index = 8;
-    myProb.x[idx][7].value = currentLine.sequenceLength;
-    myProb.x[idx][8].index = 9;
-    myProb.x[idx][8].value = currentLine.wasUnaligned;
-    myProb.x[idx][9].index = -1; // This is to indicate that there aren't any more attributes to read in.
-    myProb.x[idx][9].value = 0;
+    myProb.x[idx][7].index = -1; // This is to indicate that there aren't any more attributes to read in.
+    myProb.x[idx][7].value = 0;
 }
 
 double getPval(Marker marker, AttributeLine currentLine)
@@ -153,7 +146,7 @@ double getPval(Marker marker, AttributeLine currentLine)
     problem prob_;
     prob_.bias = -1;
     prob_.l = 1;
-    prob_.n = 9;
+    prob_.n = 7;
     prob_.x = (feature_node **) malloc(prob_.l * sizeof(feature_node *));
     prob_.x[0] = (feature_node *) malloc(10 * sizeof(feature_node));
     fillProblemX(0, currentLine, prob_);
@@ -177,9 +170,7 @@ AttributeLine parseNextLine(float winner, float second, bool is_gz, ifstream& at
         lexicalCast(currentLine.purity,firstLine[5]);
         lexicalCast(currentLine.ratioOver20In,firstLine[6]);
         lexicalCast(currentLine.ratioOver20After,firstLine[7]);
-        lexicalCast(currentLine.sequenceLength,firstLine[8]);
-        currentLine.wasUnaligned = firstLine[9] == "1";
-        currentLine.repSeq = firstLine[10];
+        currentLine.repSeq = firstLine[8];
     }
     else
     {
@@ -193,8 +184,6 @@ AttributeLine parseNextLine(float winner, float second, bool is_gz, ifstream& at
             attributeFile_gz >> currentLine.purity;
             attributeFile_gz >> currentLine.ratioOver20In;
             attributeFile_gz >> currentLine.ratioOver20After;
-            attributeFile_gz >> currentLine.sequenceLength;
-            attributeFile_gz >> currentLine.wasUnaligned;
             attributeFile_gz >> currentLine.repSeq;
         }
         else
@@ -207,8 +196,6 @@ AttributeLine parseNextLine(float winner, float second, bool is_gz, ifstream& at
             attributeFile >> currentLine.purity;
             attributeFile >> currentLine.ratioOver20In;
             attributeFile >> currentLine.ratioOver20After;
-            attributeFile >> currentLine.sequenceLength;
-            attributeFile >> currentLine.wasUnaligned;
             attributeFile >> currentLine.repSeq;
         }
     }
@@ -499,9 +486,9 @@ void makeVcfHeader(VcfFileOut& out, String<string> PnIds, string chrom)
     appendValue(header, VcfHeaderRecord("fileformat", "VCFv4.2"));
     appendValue(header, VcfHeaderRecord("fileDate", date));
     appendValue(header, VcfHeaderRecord("source", "PopSTR"));
-    appendValue(header, VcfHeaderRecord("source_bin", "/odinn/tmp/bjarnih/Genotyping/160205/bin/computeReadAttributes"));
-    appendValue(header, VcfHeaderRecord("source_bin", "/odinn/tmp/bjarnih/Genotyping/160205/bin/computePnSlippage"));
-    appendValue(header, VcfHeaderRecord("source_bin", "/odinn/tmp/bjarnih/Genotyping/160205/bin/msGenotyper"));
+    appendValue(header, VcfHeaderRecord("source_bin", "/odinn/tmp/snaedisk/190423_popSTRfreeze/binary/computeReadAttributes"));
+    appendValue(header, VcfHeaderRecord("source_bin", "/odinn/tmp/snaedisk/190423_popSTRfreeze/binary/computePnSlippage"));
+    appendValue(header, VcfHeaderRecord("source_bin", "/odinn/tmp/snaedisk/190423_popSTRfreeze/binary/msGenotyper"));
     appendValue(header, VcfHeaderRecord("reference", "/odinn/data/reference/Homo_sapiens-deCODE-hg38/Sequence/WholeGenomeFasta/genome.fa"));
     appendValue(header, VcfHeaderRecord("contig", contigString));
     appendValue(header, VcfHeaderRecord("INFO", "<ID=RefLen,Number=A,Type=Integer,Description=\"Length of the reference allele\">"));
@@ -761,7 +748,7 @@ Pair<int, String<string> > countNumberOfWords(string sentence)
 {
     int numberOfWords = 0;
     String<string> words;
-    resize(words, 11);
+    resize(words, 9);
     int currentWordLength;
     if (!isspace(sentence[0]))
     {
@@ -810,7 +797,7 @@ String<Pair<int, string> > readMarkers(CharString & markerFile)
 }
 
 //Read in data from markerSlippageFile
-void readMarkerSlippage(CharString markerSlippageFile, CharString iterationNumber, CharString regressionModelDirectory)
+void readMarkerSlippage(CharString markerSlippageFile, CharString iterationNumber, CharString regressionModelDirectory, CharString intervalIndex)
 {
     string prevItNum;
     int itNum;
@@ -832,7 +819,6 @@ void readMarkerSlippage(CharString markerSlippageFile, CharString iterationNumbe
         markerSlippageIn >> currMarker.end;
         markerSlippageIn >> currMarker.motif;
         markerSlippageIn >> currMarker.refRepeatNum;
-        markerSlippageIn >> currMarker.refRepSeq;
         markerSlippageIn >> currMarkSlipp;
         markerSlippageIn >> nPns;
         markerSlippageIn >> nAlleles;
@@ -1079,12 +1065,12 @@ int main(int argc, char const ** argv)
     String<Pair<int, string> > markersForGenotyping = readMarkers(options.markerList); //list of markers to genotype
     bool loadModAndLab = true;
     if (atoi(toCString(options.iterationNumber)) > 1) //previous estimates and regression models, if available
-        readMarkerSlippage(options.markerSlippageFile, options.iterationNumber, options.regressionModelDirectory);
+        readMarkerSlippage(options.markerSlippageFile, options.iterationNumber, options.regressionModelDirectory, options.intervalIndex);
     else
         loadModAndLab = false;
 
     //Variable declarations and initializations
-    string PnId, chrom, motif, nextWord, refRepSeq, finalItNum = "5";   
+    string PnId, chrom, motif, nextWord, finalItNum = "5";   
     int start, end, numberOfReads;
     bool writeVcf = false, enoughReads = true;
     if (options.iterationNumber == finalItNum)
@@ -1148,10 +1134,12 @@ int main(int argc, char const ** argv)
         if (nProcessedMarkers % 100==0)
             cout << "Working on marker number: " << nProcessedMarkers << endl;
         unsigned pnsFound = 0;
-        while (is_gz ? std::getline (attributeFile_gz, nextLine) : std::getline (attributeFile, nextLine) && pnsFound < length(PnIds))
+        while (is_gz ? std::getline (attributeFile_gz, nextLine) : std::getline (attributeFile, nextLine))
         {
             if (nextLine.length() == 0)
                 continue;
+            if (pnsFound >= length(PnIds))
+                break;
             numberOfWordsAndWords = countNumberOfWords(nextLine);
             if (numberOfWordsAndWords.i1 == 1)
             {
@@ -1199,7 +1187,7 @@ int main(int argc, char const ** argv)
                 }
                 continue;
             }
-            if (numberOfWordsAndWords.i1 == 9)
+            if (numberOfWordsAndWords.i1 == 8)
             {
                 marker.chrom = numberOfWordsAndWords.i2[0];
                 lexicalCast(marker.start, numberOfWordsAndWords.i2[1]);
@@ -1207,7 +1195,6 @@ int main(int argc, char const ** argv)
                 marker.motif = numberOfWordsAndWords.i2[3];
                 lexicalCast(marker.refRepeatNum, numberOfWordsAndWords.i2[4]);
                 lexicalCast(numberOfReads,numberOfWordsAndWords.i2[5]);
-                marker.refRepSeq = numberOfWordsAndWords.i2[6];
                 if (loadModAndLab)
                 {
                     winner = pnToLabels[PnId].i1;
@@ -1215,14 +1202,14 @@ int main(int argc, char const ** argv)
                 }
                 else
                 {
-                    lexicalCast(winner, numberOfWordsAndWords.i2[7]);
-                    lexicalCast(second, numberOfWordsAndWords.i2[8]);
+                    lexicalCast(winner, numberOfWordsAndWords.i2[6]);
+                    lexicalCast(second, numberOfWordsAndWords.i2[7]);
                 }
                 markerToStats[marker].alleles.insert(winner);
                 markerToStats[marker].alleles.insert(second);
                 continue;
             }
-            if (numberOfWordsAndWords.i1 == 11)
+            if (numberOfWordsAndWords.i1 == 9)
             {
                 if (numberOfReads < 10)
                 {
@@ -1241,7 +1228,7 @@ int main(int argc, char const ** argv)
                 enoughReads = true;
                 continue;
             }
-            if (numberOfWordsAndWords.i1 != 1 && numberOfWordsAndWords.i1 != 9 && numberOfWordsAndWords.i1 != 11)
+            if (numberOfWordsAndWords.i1 != 1 && numberOfWordsAndWords.i1 != 8 && numberOfWordsAndWords.i1 != 9)
                 cerr << "Format error in attribute file!" << endl;
         }
         attributePath = options.attDirChromNum;
@@ -1278,8 +1265,8 @@ int main(int argc, char const ** argv)
     param.weight_label = NULL;
     param.weight = NULL;
     //Initialize problem objects for logistic regression training and predicting
-    prob.n = 9;
-    probBig.n = 9;
+    prob.n = 7;
+    probBig.n = 7;
     prob.bias = bias;
     probBig.bias = bias;
     //Map to store alleles present in each individual at a given marker. Is cleared for each marker.
@@ -1525,7 +1512,7 @@ int main(int argc, char const ** argv)
         }
         markerToAlleleFreqs[it->first].i2 = PnsAtMarker;
         PnToAlleles.clear();
-        markerSlippageOut << thisMarker.chrom << "\t" << thisMarker.start << "\t" << thisMarker.end << "\t" << thisMarker.motif << "\t" << thisMarker.refRepeatNum << "\t" << thisMarker.refRepSeq << "\t" << setprecision(4) << fixed << markerToStats[thisMarker].slippage << "\t" << nAvailable << "\t" << markerToStats[thisMarker].nAlleles << "\t" << markerToStats[thisMarker].stutter << endl;
+        markerSlippageOut << thisMarker.chrom << "\t" << thisMarker.start << "\t" << thisMarker.end << "\t" << thisMarker.motif << "\t" << thisMarker.refRepeatNum << "\t" << "\t" << setprecision(4) << fixed << markerToStats[thisMarker].slippage << "\t" << nAvailable << "\t" << markerToStats[thisMarker].nAlleles << "\t" << markerToStats[thisMarker].stutter << endl;
         cout << thisMarker.start << " totalSlipp: " << setprecision(4) << fixed << markerToStats[thisMarker].slippage << endl;
         cout << "Finished marker number: " << z << endl;
         mapPerMarker.erase(thisMarker);

@@ -65,8 +65,6 @@ struct AttributeLine {
     float purity;
     float ratioOver20In;
     float ratioOver20After;
-    unsigned sequenceLength;
-    bool wasUnaligned;
     double pValue;
 } ;
 
@@ -145,7 +143,7 @@ ArgumentParser::ParseResult parseCommandLine(ComputePnSlippageOptions & options,
 Pair<int, String<string> > countNumberOfWords(string& sentence){
     int numberOfWords = 0;
     String<string> words;
-    resize(words, 11);
+    resize(words, 9);
     int currentWordLength;
 
     if (!isspace(sentence[0]))
@@ -228,12 +226,8 @@ void fillProblemX(int idx, AttributeLine& currentLine, problem& myProb)
     myProb.x[idx][5].value = currentLine.ratioOver20In;
     myProb.x[idx][6].index = 7;
     myProb.x[idx][6].value = currentLine.ratioOver20After;
-    myProb.x[idx][7].index = 8;
-    myProb.x[idx][7].value = currentLine.sequenceLength;
-    myProb.x[idx][8].index = 9;
-    myProb.x[idx][8].value = currentLine.wasUnaligned;
-    myProb.x[idx][9].index = -1; // This is to indicate that there aren't any more attributes to read in.
-    myProb.x[idx][9].value = 0;
+    myProb.x[idx][7].index = -1; // This is to indicate that there aren't any more attributes to read in.
+    myProb.x[idx][7].value = 0;
 }
 
 double getPval(Marker& marker, AttributeLine& currentLine)
@@ -244,7 +238,7 @@ double getPval(Marker& marker, AttributeLine& currentLine)
     problem prob;
     prob.bias = -1;
     prob.l = 1;
-    prob.n = 9;
+    prob.n = 7;
     prob.x = (feature_node **) malloc(prob.l * sizeof(feature_node *));
     prob.x[0] = (feature_node *) malloc(10 * sizeof(feature_node));
     fillProblemX(0, currentLine, prob);
@@ -265,8 +259,6 @@ void parseNextLine(float winner, float second, ifstream& attributeFile, Marker& 
     attributeFile >> currentLine.purity;
     attributeFile >> currentLine.ratioOver20In;
     attributeFile >> currentLine.ratioOver20After;
-    attributeFile >> currentLine.sequenceLength;
-    attributeFile >> currentLine.wasUnaligned;
     attributeFile >> temp;
     currentLine.pValue = getPval(marker, currentLine);
     markerToStats[marker].pSum += currentLine.pValue;
@@ -338,7 +330,6 @@ void readMarkerData_level2(CharString attributesDirectory, Marker& marker, map <
                 attsFile >> numberOfReads;
                 attsFile >> temp;
                 attsFile >> temp;
-                attsFile >> temp;
                 if (numberOfReads < 10 || markerToStats[marker].nPns < minNpns)
                     markerToStats[marker].pSum = -1.0;
                 //Just use markers where I have more than 10 reads
@@ -363,7 +354,6 @@ void readMarkerData_level2(CharString attributesDirectory, Marker& marker, map <
                 attsFile >> temp;
                 attsFile >> temp;
                 attsFile >> numberOfReads;
-                attsFile >> temp;
                 attsFile >> temp;
                 attsFile >> temp;
                 for (unsigned i = 0; i <= numberOfReads; ++i)
@@ -417,7 +407,6 @@ void readMarkerData(CharString attributesDirectory, Marker & marker, map<string,
                 attsFile >> temp;
                 attsFile >> temp;
                 attsFile >> numberOfReads;
-                attsFile >> temp;
                 attsFile >> winner;
                 attsFile >> second;
                 //Just use markers where I have more than 10 reads
@@ -427,8 +416,6 @@ void readMarkerData(CharString attributesDirectory, Marker & marker, map<string,
                     for (unsigned i = 0; i < numberOfReads; ++i)
                     {
                         attsFile >> numOfRepeats;
-                        attsFile >> temp;
-                        attsFile >> temp;
                         attsFile >> temp;
                         attsFile >> temp;
                         attsFile >> temp;
@@ -465,7 +452,6 @@ void readMarkerData(CharString attributesDirectory, Marker & marker, map<string,
                 attsFile >> temp;
                 attsFile >> temp;
                 attsFile >> numberOfReads;
-                attsFile >> temp;
                 attsFile >> temp;
                 attsFile >> temp;
                 for (unsigned i = 0; i <= numberOfReads; ++i)
@@ -520,7 +506,6 @@ void readMarkerSlippage(CharString & markerSlippFile, CharString & itNumStr, Cha
         markerSlippageFile >> currMarker.start;
         markerSlippageFile >> currMarker.end;
         markerSlippageFile >> currMarker.motif;
-        markerSlippageFile >> tempVal;
         markerSlippageFile >> tempVal;
         markerToStats[currMarker].pSum = -1.0; //set pSum to -1 initially
         markerSlippageFile >> markerToStats[currMarker].slippage; //marker slippage rate
