@@ -412,7 +412,7 @@ Pair<Triple<CharString, CharString, int>,ReadInfo> computeReadInfo(BamAlignmentR
         leftFlank = startCoord;
 
         //Check wether the alignment score fails our criteria, if it does then we see if we can remove soft clipped sequence and realign.
-        if ((float)scoreBf/(float)(startCoord+1) < 0.6 && !hasFlagUnmapped(record))
+        /*if ((float)scoreBf/(float)(startCoord+1) < 0.6 && !hasFlagUnmapped(record))
         {
             unsigned nRemoved = checkForAndRemoveSoftClippingBefore(record);
             coordinates.i1.i2 -= nRemoved;
@@ -429,7 +429,7 @@ Pair<Triple<CharString, CharString, int>,ReadInfo> computeReadInfo(BamAlignmentR
                     startCoord -= 1;
                 leftFlank = startCoord;
             }
-        }
+        }*/
         //cout << "Finished before alignment\n";
         rBf = (float)scoreBf/(float)(startCoord+1);
         ++frontAlign;
@@ -469,7 +469,7 @@ Pair<Triple<CharString, CharString, int>,ReadInfo> computeReadInfo(BamAlignmentR
         rightFlank = length(source(row(alignAfter,1)))-endCoord - 1;
 
         //Check wether the alignment score fails our criteria, if it does then we see if we can remove soft clipped sequence and realign.
-        if ((float)scoreAf/(float)(length(after)-endCoord) < 0.6 && !hasFlagUnmapped(record))
+        /*if ((float)scoreAf/(float)(length(after)-endCoord) < 0.6 && !hasFlagUnmapped(record))
         {
             unsigned readLength = length(record.seq);
             unsigned nRemoved = checkForAndRemoveSoftClippingAfter(record);
@@ -482,7 +482,7 @@ Pair<Triple<CharString, CharString, int>,ReadInfo> computeReadInfo(BamAlignmentR
                 endCoord = toSourcePosition(row(alignAfter,1),toViewPosition(row(alignAfter,0),0))-1;
                 rightFlank = length(source(row(alignAfter,1)))-endCoord - 1;
             }
-        }
+        }*/
         rAf = (float)scoreAf/(float)(length(after)-endCoord-1);
         ++backAlign;
     }
