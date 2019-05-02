@@ -58,7 +58,6 @@ struct ReadInfo {
     unsigned locationShift;
     float purity;
     float ratioOver20In;
-    float ratioOver20After;
     unsigned mateEditDist;
     Dna5String repSeq; //Repeat sequence in read
 } ;
@@ -71,7 +70,6 @@ struct ReadPairInfo {
     unsigned locationShift;
     float purity;
     float ratioOver20In;
-    float ratioOver20After;
     unsigned mateEditDist;
     CharString repSeq; //Repeat sequence in read
 } ;
@@ -522,7 +520,6 @@ Pair<Triple<CharString, CharString, int>,ReadInfo> computeReadInfo(BamAlignmentR
         //cout << "Infix command is: infix(" << coordinates.i1.i1 << "," << oldStartCoord+coordinates.i1.i2+1 << ")" << endl;
         repeatRegion = "";
         mapValue.ratioOver20In = 0;
-        mapValue.ratioOver20After = 0;
         mapValue.purity = 0;
         mapValue.repSeq = repeatRegion;
         mapValue.locationShift = 100;
@@ -545,7 +542,6 @@ Pair<Triple<CharString, CharString, int>,ReadInfo> computeReadInfo(BamAlignmentR
         //cout << "Infix command is: infix(" << coordinates.i1.i1 << "," << oldStartCoord+coordinates.i1.i2+1 << ")" << endl;
         repeatRegion = "";
         mapValue.ratioOver20In = 0;
-        mapValue.ratioOver20After = 0;
         mapValue.purity = 0;
         mapValue.repSeq = repeatRegion;
         mapValue.locationShift = 100;
@@ -581,7 +577,6 @@ Pair<Triple<CharString, CharString, int>,ReadInfo> computeReadInfo(BamAlignmentR
         repeatRegion = infix(record.seq, coordinates.i1.i1, oldStartCoord+coordinates.i1.i2+1);
         mapValue.numOfRepeats = (float)maxRepeatLength/(float)length(markerInfo.motif);
         mapValue.ratioOver20In = findRatioOver20(infix(qualString, coordinates.i1.i1, oldStartCoord+coordinates.i1.i2+1));
-        mapValue.ratioOver20After = findRatioOver20(suffix(suffix(qualString, oldStartCoord),coordinates.i1.i2+1));
         //cout << "getPurity( " << markerInfo.motif << "," << infix(record.seq, startCoord, oldStartCoord+endCoord+1) << ")\n";
         if (startCoord1!=coordinates.i1.i1 || endCoord1 != oldStartCoord+coordinates.i1.i2+1)
             mapValue.purity = getPurity(markerInfo.motif,repeatRegion);
@@ -601,7 +596,6 @@ Pair<Triple<CharString, CharString, int>,ReadInfo> computeReadInfo(BamAlignmentR
             repeatRegion = infix(record.seq, coordinates.i1.i1, oldStartCoord+coordinates.i1.i2+1);
             mapValue.numOfRepeats = (float)maxRepeatLength/(float)length(markerInfo.motif);
             mapValue.ratioOver20In = findRatioOver20(infix(qualString, coordinates.i1.i1, oldStartCoord+coordinates.i1.i2+1));
-            mapValue.ratioOver20After = 0;
             if (startCoord1!=coordinates.i1.i1 || endCoord1 != oldStartCoord+coordinates.i1.i2+1)
                 mapValue.purity = getPurity(markerInfo.motif,repeatRegion);
             else
@@ -620,7 +614,6 @@ Pair<Triple<CharString, CharString, int>,ReadInfo> computeReadInfo(BamAlignmentR
                 repeatRegion = record.seq;
                 mapValue.numOfRepeats = (float)maxRepeatLength/(float)length(markerInfo.motif);
                 mapValue.ratioOver20In = findRatioOver20(record.seq);
-                mapValue.ratioOver20After = 0.0;
                 if (length(repeatRegion) != length(infix(record.seq, startCoord1, endCoord1)))
                     mapValue.purity = getPurity(markerInfo.motif,repeatRegion);
                 else
@@ -648,7 +641,6 @@ Pair<Triple<CharString, CharString, int>,ReadInfo> computeReadInfo(BamAlignmentR
                         mapValue.numOfRepeats = 666;
                     }
                     mapValue.ratioOver20In = findRatioOver20(infix(qualString, coordinates.i1.i1, oldStartCoord+coordinates.i1.i2+1));
-                    mapValue.ratioOver20After = findRatioOver20(suffix(suffix(qualString, oldStartCoord),coordinates.i1.i2+1));
                     if (startCoord1 != coordinates.i1.i1 || endCoord1 != oldStartCoord+coordinates.i1.i2+1)
                         mapValue.purity = getPurity(markerInfo.motif,repeatRegion);
                     else
@@ -669,7 +661,6 @@ Pair<Triple<CharString, CharString, int>,ReadInfo> computeReadInfo(BamAlignmentR
                     //cout << "Infix command is: infix(" << coordinates.i1.i1 << "," << oldStartCoord+coordinates.i1.i2+1 << ")" << endl;
                     repeatRegion = infix(record.seq, coordinates.i1.i1, oldStartCoord+coordinates.i1.i2+1);
                     mapValue.ratioOver20In = 0;
-                    mapValue.ratioOver20After = 0;
                     mapValue.purity = 0;
                 }
             }
@@ -1068,7 +1059,6 @@ int main(int argc, char const ** argv)
             currentReadPair.locationShift = it->second.locationShift;
             currentReadPair.purity = it->second.purity;
             currentReadPair.ratioOver20In = it->second.ratioOver20In;
-            currentReadPair.ratioOver20After = it->second.ratioOver20After;
             currentReadPair.mateEditDist = it->second.mateEditDist;
             currentReadPair.repSeq = it->second.repSeq;
             //Put the lime in the coconut
@@ -1147,7 +1137,7 @@ int main(int argc, char const ** argv)
                 if (printMe.numOfRepeats < 0)
                     continue;
                 //Print attributes to output file.
-                fprintf(startAndEndToStreamAndOffsets[mapKey].i2,"%.1f\t%.1f\t%.1f\t%u\t%u\t%.2f\t%.2f\t%.2f\t%s\n",printMe.numOfRepeats,printMe.ratioBf,printMe.ratioAf,printMe.locationShift,printMe.mateEditDist,printMe.purity,printMe.ratioOver20In,printMe.ratioOver20After,toCString(printMe.repSeq));
+                fprintf(startAndEndToStreamAndOffsets[mapKey].i2,"%.1f\t%.1f\t%.1f\t%u\t%u\t%.2f\t%.2f\t%s\n",printMe.numOfRepeats,printMe.ratioBf,printMe.ratioAf,printMe.locationShift,printMe.mateEditDist,printMe.purity,printMe.ratioOver20In,toCString(printMe.repSeq));
             }
         }
         //Flush last stream before starting next PN

@@ -50,7 +50,6 @@ struct AttributeLine {
     unsigned mateEditDist;
     float purity;
     float ratioOver20In;
-    float ratioOver20After;
     int label;
     double pValue;
 } ;
@@ -158,10 +157,8 @@ void fillProblemX(int idx, AttributeLine currentLine, problem& myProb)
     myProb.x[idx][4].value = currentLine.purity;
     myProb.x[idx][5].index = 6;
     myProb.x[idx][5].value = currentLine.ratioOver20In;
-    myProb.x[idx][6].index = 7;
-    myProb.x[idx][6].value = currentLine.ratioOver20After;
-    myProb.x[idx][7].index = -1; // This is to indicate that there aren't any more attributes to read in.
-    myProb.x[idx][7].value = 0;
+    myProb.x[idx][6].index = -1; // This is to indicate that there aren't any more attributes to read in.
+    myProb.x[idx][6].value = 0;
 }
 
 void readMarkerSlippage(ifstream& markerSlippageFile, CharString regressionModelDirectory)
@@ -231,7 +228,7 @@ double getPval(Marker marker, AttributeLine currentLine)
     problem prob;
     prob.bias = -1;
     prob.l = 1;
-    prob.n = 7;
+    prob.n = 6;
     prob.x = (feature_node **) malloc(prob.l * sizeof(feature_node *));
     prob.x[0] = (feature_node *) malloc(10 * sizeof(feature_node));
     fillProblemX(0, currentLine, prob);
@@ -251,7 +248,6 @@ AttributeLine parseNextLine(float winner, float second, ifstream& attributeFile,
     attributeFile >> currentLine.mateEditDist;
     attributeFile >> currentLine.purity;
     attributeFile >> currentLine.ratioOver20In;
-    attributeFile >> currentLine.ratioOver20After;
     attributeFile >> temp;
     currentLine.pValue = getPval(marker, currentLine);
     markerToStats[marker].pSum += currentLine.pValue;

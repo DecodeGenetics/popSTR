@@ -47,10 +47,8 @@ struct AttributeLine {
     unsigned mateEditDist;
     float purity;
     float ratioOver20In;
-    float ratioOver20After;
     int label;
     double pValue;
-    string repSeq;
 } ;
 
 //For storing marker information
@@ -132,10 +130,8 @@ void fillProblemX(int idx, AttributeLine currentLine, problem& myProb)
     myProb.x[idx][4].value = currentLine.purity;
     myProb.x[idx][5].index = 6;
     myProb.x[idx][5].value = currentLine.ratioOver20In;
-    myProb.x[idx][6].index = 7;
-    myProb.x[idx][6].value = currentLine.ratioOver20After;
-    myProb.x[idx][7].index = -1; // This is to indicate that there aren't any more attributes to read in.
-    myProb.x[idx][7].value = 0;
+    myProb.x[idx][6].index = -1; // This is to indicate that there aren't any more attributes to read in.
+    myProb.x[idx][6].value = 0;
 }
 
 double getPval(Marker marker, AttributeLine currentLine)
@@ -146,7 +142,7 @@ double getPval(Marker marker, AttributeLine currentLine)
     problem prob_;
     prob_.bias = -1;
     prob_.l = 1;
-    prob_.n = 7;
+    prob_.n = 6;
     prob_.x = (feature_node **) malloc(prob_.l * sizeof(feature_node *));
     prob_.x[0] = (feature_node *) malloc(10 * sizeof(feature_node));
     fillProblemX(0, currentLine, prob_);
@@ -160,6 +156,7 @@ AttributeLine parseNextLine(float winner, float second, bool is_gz, ifstream& at
     PnAndMarkerToGenotype[Pair<string,Marker>(PnId, marker)].genotype = Pair<float>(winner,second);
     AttributeLine currentLine;
     currentLine.PnId = PnId;
+    string tmp;
     if (useFirstLine)
     {
         lexicalCast(currentLine.numOfRepeats, firstLine[0]);
@@ -169,8 +166,6 @@ AttributeLine parseNextLine(float winner, float second, bool is_gz, ifstream& at
         lexicalCast(currentLine.mateEditDist,firstLine[4]);
         lexicalCast(currentLine.purity,firstLine[5]);
         lexicalCast(currentLine.ratioOver20In,firstLine[6]);
-        lexicalCast(currentLine.ratioOver20After,firstLine[7]);
-        currentLine.repSeq = firstLine[8];
     }
     else
     {
@@ -183,8 +178,7 @@ AttributeLine parseNextLine(float winner, float second, bool is_gz, ifstream& at
             attributeFile_gz >> currentLine.mateEditDist;
             attributeFile_gz >> currentLine.purity;
             attributeFile_gz >> currentLine.ratioOver20In;
-            attributeFile_gz >> currentLine.ratioOver20After;
-            attributeFile_gz >> currentLine.repSeq;
+            attributeFile_gz >> tmp; //repeatSeqFromRead
         }
         else
         {
@@ -195,8 +189,7 @@ AttributeLine parseNextLine(float winner, float second, bool is_gz, ifstream& at
             attributeFile >> currentLine.mateEditDist;
             attributeFile >> currentLine.purity;
             attributeFile >> currentLine.ratioOver20In;
-            attributeFile >> currentLine.ratioOver20After;
-            attributeFile >> currentLine.repSeq;
+            attributeFile >> tmp; //repeatSeqFromRead
         }
     }
     if (!useModelAndLabels)
@@ -1166,7 +1159,6 @@ int main(int argc, char const ** argv)
                         attributeFile_gz >> numberOfReads;
                         attributeFile_gz >> temp;
                         attributeFile_gz >> temp;
-                        attributeFile_gz >> temp;
                         for (unsigned i = 0; i <= numberOfReads; ++i)
                             getline (attributeFile_gz,nextLine);
                     }
@@ -1180,7 +1172,6 @@ int main(int argc, char const ** argv)
                         attributeFile >> numberOfReads;
                         attributeFile >> temp;
                         attributeFile >> temp;
-                        attributeFile >> temp;
                         for (unsigned i = 0; i <= numberOfReads; ++i)
                             getline (attributeFile,nextLine);
                     }
@@ -1189,46 +1180,49 @@ int main(int argc, char const ** argv)
             }
             if (numberOfWordsAndWords.i1 == 8)
             {
-                marker.chrom = numberOfWordsAndWords.i2[0];
-                lexicalCast(marker.start, numberOfWordsAndWords.i2[1]);
-                lexicalCast(marker.end, numberOfWordsAndWords.i2[2]);
-                marker.motif = numberOfWordsAndWords.i2[3];
-                lexicalCast(marker.refRepeatNum, numberOfWordsAndWords.i2[4]);
-                lexicalCast(numberOfReads,numberOfWordsAndWords.i2[5]);
-                if (loadModAndLab)
+                if (numberOfWordsAndWords.i2[0].substr(0,3) == "chr")
                 {
-                    winner = pnToLabels[PnId].i1;
-                    second = pnToLabels[PnId].i2;
+                    marker.chrom = numberOfWordsAndWords.i2[0];
+                    lexicalCast(marker.start, numberOfWordsAndWords.i2[1]);
+                    lexicalCast(marker.end, numberOfWordsAndWords.i2[2]);
+                    marker.motif = numberOfWordsAndWords.i2[3];
+                    lexicalCast(marker.refRepeatNum, numberOfWordsAndWords.i2[4]);
+                    lexicalCast(numberOfReads,numberOfWordsAndWords.i2[5]);
+                    if (loadModAndLab)
+                    {
+                        winner = pnToLabels[PnId].i1;
+                        second = pnToLabels[PnId].i2;
+                    }
+                    else
+                    {
+                        lexicalCast(winner, numberOfWordsAndWords.i2[6]);
+                        lexicalCast(second, numberOfWordsAndWords.i2[7]);
+                    }
+                    markerToStats[marker].alleles.insert(winner);
+                    markerToStats[marker].alleles.insert(second);
+                    continue;
                 }
                 else
                 {
-                    lexicalCast(winner, numberOfWordsAndWords.i2[6]);
-                    lexicalCast(second, numberOfWordsAndWords.i2[7]);
+                    if (numberOfReads < 10)
+                    {
+                        PnAndMarkerToGenotype[Pair<string,Marker>(PnId, marker)].pValueSum = 0;
+                        PnAndMarkerToGenotype[Pair<string,Marker>(PnId, marker)].fullMotifSlippageSum = 0;
+                        enoughReads = false;
+                    }
+                    for (unsigned i = 0; i < numberOfReads; ++i)
+                    {
+                        if (i == 0)
+                            currentLine = parseNextLine(winner, second, is_gz, attributeFile, attributeFile_gz, marker, PnId, PnAndMarkerToGenotype, numberOfWordsAndWords.i2, true, loadModAndLab, enoughReads);
+                        else
+                            currentLine = parseNextLine(winner, second, is_gz, attributeFile, attributeFile_gz, marker, PnId, PnAndMarkerToGenotype, numberOfWordsAndWords.i2, false, loadModAndLab, enoughReads);
+                        appendValue(mapPerMarker[marker],currentLine);
+                    }
+                    enoughReads = true;
+                    continue;
                 }
-                markerToStats[marker].alleles.insert(winner);
-                markerToStats[marker].alleles.insert(second);
-                continue;
             }
-            if (numberOfWordsAndWords.i1 == 9)
-            {
-                if (numberOfReads < 10)
-                {
-                    PnAndMarkerToGenotype[Pair<string,Marker>(PnId, marker)].pValueSum = 0;
-                    PnAndMarkerToGenotype[Pair<string,Marker>(PnId, marker)].fullMotifSlippageSum = 0;
-                    enoughReads = false;
-                }
-                for (unsigned i = 0; i < numberOfReads; ++i)
-                {
-                    if (i == 0)
-                        currentLine = parseNextLine(winner, second, is_gz, attributeFile, attributeFile_gz, marker, PnId, PnAndMarkerToGenotype, numberOfWordsAndWords.i2, true, loadModAndLab, enoughReads);
-                    else
-                        currentLine = parseNextLine(winner, second, is_gz, attributeFile, attributeFile_gz, marker, PnId, PnAndMarkerToGenotype, numberOfWordsAndWords.i2, false, loadModAndLab, enoughReads);
-                    appendValue(mapPerMarker[marker],currentLine);
-                }
-                enoughReads = true;
-                continue;
-            }
-            if (numberOfWordsAndWords.i1 != 1 && numberOfWordsAndWords.i1 != 8 && numberOfWordsAndWords.i1 != 9)
+            if (numberOfWordsAndWords.i1 != 1 && numberOfWordsAndWords.i1 != 8)
                 cerr << "Format error in attribute file!" << endl;
         }
         attributePath = options.attDirChromNum;
@@ -1265,8 +1259,8 @@ int main(int argc, char const ** argv)
     param.weight_label = NULL;
     param.weight = NULL;
     //Initialize problem objects for logistic regression training and predicting
-    prob.n = 7;
-    probBig.n = 7;
+    prob.n = 6;
+    probBig.n = 6;
     prob.bias = bias;
     probBig.bias = bias;
     //Map to store alleles present in each individual at a given marker. Is cleared for each marker.
