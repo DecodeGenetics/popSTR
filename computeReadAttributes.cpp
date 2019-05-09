@@ -1153,8 +1153,11 @@ int main(int argc, char const ** argv)
     {
         //Find index of first pn with available reads
         unsigned idx = 0;
-        while (marker.second.i1[idx] == 0)
+        while (idx < length(marker.second.i1) && marker.second.i1[idx] == 0)
             ++idx;
+        //Check if any pn has available reads
+        if (marker.second.i1[idx] == 0)
+            continue;
         rewind(marker.second.i2);
         for (unsigned i=0; i<length(marker.second.i1); ++i)
         {
