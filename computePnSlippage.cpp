@@ -47,12 +47,10 @@ struct Marker {
 struct MarkerStats
 {
     model* regressionModel;
-    double pSum;
+    std::map<string, Pair<double> > pnToPandFullMotifSlippSums;
     double slippage;
     unsigned nAlleles;
     double stutter;
-    double stepSum;
-    double fullMotifSlippageSum;
     unsigned nPns;
 };
 
@@ -243,8 +241,8 @@ double getPval(Marker& marker, AttributeLine& currentLine)
     return prob_estimates[0];
 }
 
-//Parses one line from attribute file by filling up and returning an AttributeLine, also initializes markerToSizeAndModel map using the labels
-void parseNextLine(float winner, float second, ifstream& attributeFile, Marker& marker)
+//Parses one line from attribute file by filling up and returning an AttributeLine, also initializes markerToStats map using the labels
+void parseNextLine(float winner, float second, ifstream& attributeFile, Marker& marker, string pn)
 {
     AttributeLine currentLine;
     string temp;
@@ -257,12 +255,12 @@ void parseNextLine(float winner, float second, ifstream& attributeFile, Marker& 
     attributeFile >> currentLine.ratioOver20In;
     attributeFile >> temp;
     currentLine.pValue = getPval(marker, currentLine);
-    markerToStats[marker].pSum += currentLine.pValue;
+    markerToStats[marker].pnToPandFullMotifSlippSums[pn].i1 += currentLine.pValue;
     if (currentLine.numOfRepeats != winner && currentLine.numOfRepeats != second)
     {
         float diff1 = fabs(currentLine.numOfRepeats - winner), diff2 = fabs(currentLine.numOfRepeats - second);
         if (std::min(diff1,diff2)>=0.9)
-            markerToStats[marker].fullMotifSlippageSum += currentLine.pValue;
+            markerToStats[marker].pnToPandFullMotifSlippSums[pn].i2 += currentLine.pValue;
     }
 }
 
@@ -326,17 +324,16 @@ void readMarkerData_level2(CharString attributesDirectory, Marker& marker, map <
                 attsFile >> numberOfReads;
                 attsFile >> temp;
                 attsFile >> temp;
-                if (numberOfReads < 10 || markerToStats[marker].nPns < minNpns)
-                    markerToStats[marker].pSum = -1.0;
                 //Just use markers where I have more than 10 reads
                 if (numberOfReads >= 10 && markerToStats[marker].nPns >= minNpns)
                 {
                     for (unsigned i = 0; i < numberOfReads; ++i)
-                        parseNextLine(winner, second, attsFile, marker);
+                        parseNextLine(winner, second, attsFile, marker, nextLine);
                 }
                 //Not enough reads
                 else
                 {
+                    markerToStats[marker].pnToPandFullMotifSlippSums[nextLine].i1 = 0.0;
                     for (unsigned i = 0; i <= numberOfReads; ++i)
                         getline (attsFile,nextLine);
                 }
@@ -502,7 +499,6 @@ void readMarkerSlippage(CharString & markerSlippFile, CharString & itNumStr, Cha
         markerSlippageFile >> currMarker.end;
         markerSlippageFile >> currMarker.motif;
         markerSlippageFile >> tempVal;
-        markerToStats[currMarker].pSum = -1.0; //set pSum to -1 initially
         markerSlippageFile >> markerToStats[currMarker].slippage; //marker slippage rate
         markerSlippageFile >> markerToStats[currMarker].nPns; //how many pns available to estimate the marker slippage
         markerSlippageFile >> markerToStats[currMarker].nAlleles; //read number of alleles
@@ -517,30 +513,30 @@ void readMarkerSlippage(CharString & markerSlippFile, CharString & itNumStr, Cha
     }
 }
 
-double estimatePnSlippage(double current_sp)
+double estimatePnSlippage(double current_sp, string pn)
 {
     vector<double> weights;
     vector<double> slippFragments;
     double currMarkSlipp, currPvalSum, weightSum = 0, fullMotifSlippageSum = 0;
     for (auto& marker: markerToStats)
     {
-        if ( marker.second.pSum == -1.0)
+        if ( marker.second.pnToPandFullMotifSlippSums[pn].i1 == 0.0)
             continue;
         if (marker.second.slippage == 0)
             currMarkSlipp = 0.001;
         else
             currMarkSlipp = marker.second.slippage;
-        currPvalSum = marker.second.pSum;
+        currPvalSum = marker.second.pnToPandFullMotifSlippSums[pn].i1;
         weights.push_back(currPvalSum/((current_sp+currMarkSlipp)*(1-(current_sp+currMarkSlipp))));
     }
     weightSum = accumulate(weights.begin(),weights.end(),0.0);
     unsigned index = 0;
     for (auto& marker: markerToStats)
     {
-        if ( marker.second.pSum == -1.0)
+        if ( marker.second.pnToPandFullMotifSlippSums[pn].i1 == 0.0)
             continue;
-        fullMotifSlippageSum = marker.second.fullMotifSlippageSum;
-        slippFragments.push_back((weights[index]/weightSum)*((fullMotifSlippageSum/marker.second.pSum) - marker.second.slippage));
+        fullMotifSlippageSum = marker.second.pnToPandFullMotifSlippSums[pn].i2;
+        slippFragments.push_back((weights[index]/weightSum)*((fullMotifSlippageSum/marker.second.pnToPandFullMotifSlippSums[pn].i1) - marker.second.slippage));
         fullMotifSlippageSum = 0;
         ++index;
     }
@@ -614,13 +610,13 @@ int main(int argc, char const ** argv)
     }
     else
     {
-        //map to store labels at each marker, must clear for each marker
-        map<string, Pair<float> > pnToLabels;
+        map<string, Pair<float> > pnToLabels; //map to store labels at each marker, must clear for each marker
         //read previous slippage
         map<string, Pair<double, unsigned> > pnToPrevSlipp = readPrevSlipp(options.outputFile, options.iterationNumber);
         cout << "Finished reading " << pnToPrevSlipp.size() << " pns.\n";
         //read marker slippage and models
         readMarkerSlippage(options.markerSlippageFile, options.iterationNumber, options.regressionModelDirectory);
+        cout << "Finished reading markerSlippage and regression models." << endl;
         //Loop over markers and accumulate data
         for (unsigned i = 0; i < length(markers); ++i)
         {
@@ -634,7 +630,7 @@ int main(int argc, char const ** argv)
         for (auto& pn: pnToPrevSlipp)
         {
             double prevSlipp = pn.second.i1;
-            double slippage = estimatePnSlippage(prevSlipp);
+            double slippage = estimatePnSlippage(prevSlipp, pn.first);
             outputFile << pn.first << "\t" << slippage << "\t" << pn.second.i2<< "\n";
         }
     }

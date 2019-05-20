@@ -68,11 +68,10 @@ struct GenotypeInfo {
 struct MarkerStats
 {
     model* regressionModel;
-    double pSum;
+    std::map<string, double> pnToPsum;
     double slippage;
     unsigned nAlleles;
     double stutter;
-    double stepSum;
     double fullMotifSlippageSum;
     unsigned nPns;
 };
@@ -173,7 +172,6 @@ void readMarkerSlippage(ifstream& markerSlippageFile, CharString regressionModel
         markerSlippageFile >> currMarker.end;
         markerSlippageFile >> currMarker.motif;
         markerSlippageFile >> tempVal;
-        markerToStats[currMarker].pSum = -1.0;
         markerSlippageFile >> markerToStats[currMarker].slippage; //marker slippage rate
         markerSlippageFile >> markerToStats[currMarker].nPns; //how many pns available to estimate the marker slippage
         markerSlippageFile >> markerToStats[currMarker].nAlleles; //read number of alleles
@@ -250,7 +248,7 @@ AttributeLine parseNextLine(float winner, float second, ifstream& attributeFile,
     attributeFile >> currentLine.ratioOver20In;
     attributeFile >> temp;
     currentLine.pValue = getPval(marker, currentLine);
-    markerToStats[marker].pSum += currentLine.pValue;
+    markerToStats[marker].pnToPsum[pnId] += currentLine.pValue;
     if (currentLine.numOfRepeats == winner || currentLine.numOfRepeats == second)
     {
         pnToLabelProps[pnId].p1 += currentLine.pValue;
@@ -280,20 +278,20 @@ double estimateSlippage(double current_sp, string pnId)
     double currMarkSlipp, currPvalSum, weightSum = 0, fullMotifSlippageSum = 0;
     for (auto& marker: markerToStats)
     {
-        if ( marker.second.pSum == -1.0)
+        if ( marker.second.pnToPsum[pnId] == 0.0)
             continue;
         if (marker.second.slippage == 0)
             currMarkSlipp = 0.001;
         else
             currMarkSlipp = marker.second.slippage;
-        currPvalSum = marker.second.pSum;
+        currPvalSum = marker.second.pnToPsum[pnId];
         weights.push_back(currPvalSum/((current_sp+currMarkSlipp)*(1-(current_sp+currMarkSlipp))));
     }
     weightSum = accumulate(weights.begin(),weights.end(),0.0);
     unsigned index = 0;
     for (auto& marker: markerToStats)
     {
-        if ( marker.second.pSum == -1.0)
+        if ( marker.second.pnToPsum[pnId] == 0.0)
             continue;
         Pair<string, Marker> mapKey = Pair<string, Marker>(pnId, marker.first); 
         String<AttributeLine> readsAtI = markerAndPnToReads[mapKey];
@@ -302,7 +300,7 @@ double estimateSlippage(double current_sp, string pnId)
             if (readsAtI[i].label == 2)
                 fullMotifSlippageSum += readsAtI[i].pValue;
         }
-        slippFragments.push_back((weights[index]/weightSum)*((fullMotifSlippageSum/marker.second.pSum) - marker.second.slippage));
+        slippFragments.push_back((weights[index]/weightSum)*((fullMotifSlippageSum/marker.second.pnToPsum[pnId]) - marker.second.slippage));
         fullMotifSlippageSum = 0;
         ++index;
     }
@@ -454,7 +452,7 @@ int updateGenotypes(double current_sp, string pnId)
     String<Pair<float> > genotypes;
     for (auto& marker: markerToStats)
     {
-        if ( marker.second.pSum == -1.0)
+        if ( marker.second.pnToPsum[pnId] == 0.0)
             continue;
         genotypes = markerToAllelesAndGenotypes[marker.first].i2;
         Pair<string, Marker> mapKey = Pair<string, Marker>(pnId, marker.first);
@@ -558,6 +556,7 @@ void readMarkerData(CharString attributesDirectory, Marker marker, map<string, L
                 //Not enough reads
                 else
                 {
+                    markerToStats[marker].pnToPsum[nextLine] = 0.0;
                     for (unsigned i = 0; i <= numberOfReads; ++i)
                         getline (attsFile,nextLine);
                 }
