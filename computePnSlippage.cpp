@@ -49,8 +49,6 @@ struct MarkerStats
     model* regressionModel;
     std::map<string, Pair<double> > pnToPandFullMotifSlippSums;
     double slippage;
-    unsigned nAlleles;
-    double stutter;
     unsigned nPns;
 };
 
@@ -501,8 +499,10 @@ void readMarkerSlippage(CharString & markerSlippFile, CharString & itNumStr, Cha
         markerSlippageFile >> tempVal;
         markerSlippageFile >> markerToStats[currMarker].slippage; //marker slippage rate
         markerSlippageFile >> markerToStats[currMarker].nPns; //how many pns available to estimate the marker slippage
-        markerSlippageFile >> markerToStats[currMarker].nAlleles; //read number of alleles
-        markerSlippageFile >> markerToStats[currMarker].stutter; //marker stutter rate
+        markerSlippageFile >> tempVal;
+        markerSlippageFile >> tempVal;
+        markerSlippageFile >> tempVal;
+        markerSlippageFile >> tempVal;
         append(currMarkerModelDir, "/model_");
         append(currMarkerModelDir, to_string(currMarker.start));
         append(currMarkerModelDir, "_");

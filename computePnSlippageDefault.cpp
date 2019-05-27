@@ -74,6 +74,8 @@ struct MarkerStats
     double stutter;
     double fullMotifSlippageSum;
     unsigned nPns;
+    double posSlippProb;
+    double negSlippProb;
 };
 
 //So I can map from Markers
@@ -176,6 +178,8 @@ void readMarkerSlippage(ifstream& markerSlippageFile, CharString regressionModel
         markerSlippageFile >> markerToStats[currMarker].nPns; //how many pns available to estimate the marker slippage
         markerSlippageFile >> markerToStats[currMarker].nAlleles; //read number of alleles
         markerSlippageFile >> markerToStats[currMarker].stutter; //marker stutter rate
+        markerSlippageFile >> markerToStats[currMarker].posSlippProb; //probability of adding repeats in slippage
+        markerSlippageFile >> markerToStats[currMarker].negSlippProb; //probability of losing repeats in slippage
         append(currMarkerModelDir, "/model_");
         append(currMarkerModelDir, to_string(currMarker.start));
         append(currMarkerModelDir, "_");
@@ -386,7 +390,7 @@ void relabelReads(std::set<float>& newGenotype, String<AttributeLine>& reads)
     }
 }
 
-bool determineGenotype(String<AttributeLine>& reads, double s_ij, String<Pair<float> > genotypes, int numberOfAlleles, int motifLength, double psucc)
+bool determineGenotype(String<AttributeLine>& reads, double s_ij, String<Pair<float> > genotypes, int numberOfAlleles, int motifLength, double psucc, double posSlippProb, double negSlippProb)
 {
     Pair<float> genotypeToCheck;
     AttributeLine readToCheck;
@@ -411,22 +415,22 @@ bool determineGenotype(String<AttributeLine>& reads, double s_ij, String<Pair<fl
             if (isHomo)
             {
                 if (readToCheck.numOfRepeats < genotypeToCheck.i1)
-                    posNegSlipp = 0.80;
+                    posNegSlipp = negSlippProb;
                 if (readToCheck.numOfRepeats > genotypeToCheck.i1)
-                    posNegSlipp = 0.2;
+                    posNegSlipp = posSlippProb;
                 diff = fabs(readToCheck.numOfRepeats - genotypeToCheck.i1);
                 probs[i] *= (readToCheck.pValue * dgeom(static_cast<int>(roundf((diff-(float)floor(diff))*motifLength)), psucc) * dpois(floor(diff), lambda) * posNegSlipp + ((double)(1.0-readToCheck.pValue)/(double)numberOfAlleles));
             }
             else
             {
                 if (readToCheck.numOfRepeats < genotypeToCheck.i1)
-                    posNegSlipp = 0.8;
+                    posNegSlipp = negSlippProb;
                 if (readToCheck.numOfRepeats > genotypeToCheck.i1)
-                    posNegSlipp = 0.2;
+                    posNegSlipp = posSlippProb;
                 if (readToCheck.numOfRepeats < genotypeToCheck.i2)
-                    posNegSlipp2 = 0.8;
+                    posNegSlipp2 = negSlippProb;
                 if (readToCheck.numOfRepeats > genotypeToCheck.i2)
-                    posNegSlipp2 = 0.2;
+                    posNegSlipp2 = posSlippProb;
                 diff = fabs(readToCheck.numOfRepeats - genotypeToCheck.i1);
                 diff2 = fabs(readToCheck.numOfRepeats - genotypeToCheck.i2);
                 probs[i] *= (readToCheck.pValue * 0.5 * (dgeom(static_cast<int>(roundf((diff-(float)floor(diff))*motifLength)), psucc) * dpois(floor(diff), lambda) * posNegSlipp + dgeom(static_cast<int>(roundf((diff2-(float)floor(diff2))*motifLength)), psucc) * dpois(floor(diff2), lambda) * posNegSlipp2) + ((double)(1.0-readToCheck.pValue)/(double)numberOfAlleles));
@@ -456,7 +460,7 @@ int updateGenotypes(double current_sp, string pnId)
             continue;
         genotypes = markerToAllelesAndGenotypes[marker.first].i2;
         Pair<string, Marker> mapKey = Pair<string, Marker>(pnId, marker.first);
-        changed = determineGenotype(markerAndPnToReads[mapKey], current_sp+marker.second.slippage, genotypes, marker.second.nAlleles, marker.first.motif.size(), marker.second.stutter);
+        changed = determineGenotype(markerAndPnToReads[mapKey], current_sp+marker.second.slippage, genotypes, marker.second.nAlleles, marker.first.motif.size(), marker.second.stutter, marker.second.posSlippProb, marker.second.negSlippProb);
         if (changed)
             ++nChanged;
     }
@@ -598,7 +602,6 @@ int main(int argc, char const ** argv)
     }
     else
         readMarkerSlippage(slippageFile, options.modelDirectory);
-
     //Read pn list
     map<string, LabelProps> pnToLabelProps = readPnList(options.pnList);
     //make output file

@@ -107,15 +107,12 @@ map<string, String<Pair<float> > > pnToLabels;
 map<string, string> pnToSeqMethod;
 //Map from marker to (average stepsize)%period
 map<Marker, double> markerToStepSum;
+//Map from marker to pValue sums of full motif slippage events adding and removing motifs (for estimating posNegSlipp parameter in genotyping formula)
+map<Marker, Pair<double> > markerToPosNegSums;
 //Map from marker to alleles that I have found more than 3 reads of with freq > 25% in a single PN
 map<Marker, std::set<float> > markerToTrueAlleles;
 //for debugging purposes
 bool useGeom = true;
-
-/*Map to store sum of pValues for each alleleLength at each marker
-map<Marker, map<int,double> > MarkToAllLenToPvalSum;
-//Map to store sum of pValue*alleleLength for all reads at each marker
-map<Marker, double> MarkToPvalAllLenSum;*/
 
 //Parameter, problem and model structs to use in training of logistic regression model and computing pValues
 parameter param;
@@ -242,7 +239,24 @@ AttributeLine parseNextLine(float winner, float second, bool is_gz, ifstream& at
     //Check if the read is a result of a full motif slippage
     float diff1 = fabs(winner-currentLine.numOfRepeats), diff2 = fabs(second-currentLine.numOfRepeats);
     if (std::min(diff1,diff2)>=0.9)
+    {
         PnAndMarkerToGenotype[Pair<string,Marker>(PnId, marker)].fullMotifSlippageSum += currentLine.pValue;
+        //Check whether slippage removed or added repeat
+        if (diff1 < diff2)
+        {
+            if (winner > currentLine.numOfRepeats)
+                markerToPosNegSums[marker].i2 += currentLine.pValue;
+            else
+                markerToPosNegSums[marker].i1 += currentLine.pValue;
+        }
+        else
+        {
+            if (second > currentLine.numOfRepeats)
+                markerToPosNegSums[marker].i2 += currentLine.pValue;
+            else
+                markerToPosNegSums[marker].i1 += currentLine.pValue;
+        }
+    }
     //Determining the initial label of the read
     if ((fabs(currentLine.numOfRepeats - winner) <= 0.05) || (fabs(currentLine.numOfRepeats - second) <= 0.05))
     {
@@ -368,7 +382,7 @@ float dpois(int step, float mean) {
   return p;
 }
 
-Pair<GenotypeInfo, Pair<bool> > determineGenotype(String<AttributeLine> reads, double markerSlippage, String<Pair<float> > genotypes, int numberOfAlleles, int motifLength, double psucc)
+Pair<GenotypeInfo, Pair<bool> > determineGenotype(String<AttributeLine>& reads, double markerSlippage, String<Pair<float> > genotypes, int numberOfAlleles, int motifLength, double psucc, double posSlippProb, double negSlippProb, Marker& thisMarker)
 {
     GenotypeInfo returnValue;
     returnValue.pValueSum = 0;
@@ -379,7 +393,7 @@ Pair<GenotypeInfo, Pair<bool> > determineGenotype(String<AttributeLine> reads, d
     AttributeLine readToCheck;
     std::set<float> currentGenotype, newGenotypeSet;
     String<long double> probs;
-    double errorProbSum = 0, lengthSlippage;
+    double lengthSlippage;
     resize(probs, length(genotypes));
     bool isHomo, enoughDistance = true;
     float posNegSlipp = 1, posNegSlipp2 = 1, lambda = std::max((double)0.001,markerSlippage), diff, diff2;
@@ -405,9 +419,9 @@ Pair<GenotypeInfo, Pair<bool> > determineGenotype(String<AttributeLine> reads, d
             if (isHomo)
             {
                 if (readToCheck.numOfRepeats < genotypeToCheck.i1)
-                    posNegSlipp = 0.8;
+                    posNegSlipp = negSlippProb;
                 if (readToCheck.numOfRepeats > genotypeToCheck.i1)
-                    posNegSlipp = 0.2;
+                    posNegSlipp = posSlippProb;
                 diff = fabs(readToCheck.numOfRepeats - genotypeToCheck.i1);
                 if (useGeom)
                 {
@@ -419,13 +433,13 @@ Pair<GenotypeInfo, Pair<bool> > determineGenotype(String<AttributeLine> reads, d
             else
             {
                 if (readToCheck.numOfRepeats < genotypeToCheck.i1)
-                    posNegSlipp = 0.8;
+                    posNegSlipp = negSlippProb;
                 if (readToCheck.numOfRepeats > genotypeToCheck.i1)
-                    posNegSlipp = 0.2;
+                    posNegSlipp = posSlippProb;
                 if (readToCheck.numOfRepeats < genotypeToCheck.i2)
-                    posNegSlipp2 = 0.8;
+                    posNegSlipp2 = negSlippProb;
                 if (readToCheck.numOfRepeats > genotypeToCheck.i2)
-                    posNegSlipp2 = 0.2;
+                    posNegSlipp2 = posSlippProb;
                 diff = fabs(readToCheck.numOfRepeats - genotypeToCheck.i1);
                 diff2 = fabs(readToCheck.numOfRepeats - genotypeToCheck.i2);
                 if (useGeom)
@@ -453,11 +467,25 @@ Pair<GenotypeInfo, Pair<bool> > determineGenotype(String<AttributeLine> reads, d
     for (unsigned j=0; j<length(reads); ++j)
     {
         readToCheck = reads[j];
-        if ((readToCheck.numOfRepeats != returnValue.genotype.i1) && (readToCheck.numOfRepeats != returnValue.genotype.i2))
-            errorProbSum += readToCheck.pValue;
         float diff1 = fabs(returnValue.genotype.i1-readToCheck.numOfRepeats), diff2 = fabs(returnValue.genotype.i2-readToCheck.numOfRepeats);
         if (std::min(diff1,diff2)>=0.9)
+        {
             returnValue.fullMotifSlippageSum += readToCheck.pValue;
+            if (diff1 < diff2)
+            {
+                if (returnValue.genotype.i1 > readToCheck.numOfRepeats)
+                    markerToPosNegSums[thisMarker].i2 += readToCheck.pValue;
+                else
+                    markerToPosNegSums[thisMarker].i1 += readToCheck.pValue;
+            }
+            else
+            {
+                if (returnValue.genotype.i2 > readToCheck.numOfRepeats)
+                    markerToPosNegSums[thisMarker].i2 += readToCheck.pValue;
+                else
+                    markerToPosNegSums[thisMarker].i1 += readToCheck.pValue;
+            }
+        }
     }
     if (newGenotypeSet == currentGenotype)
         return Pair<GenotypeInfo, Pair<bool> >(returnValue, Pair<bool>(false,enoughDistance));
@@ -1174,12 +1202,10 @@ int main(int argc, char const ** argv)
     stringstream ss;
     CharString str;
     MakeGenotypesRet genotypesAtThisMarker;
-    double alleleDistance, geomP;
+    double alleleDistance, geomP, posSlippProb, negSlippProb;
     Pair<double, int> slippAndNavail;
 
     //Loop over map from Marker to string<AttributeLine> and train model for each marker and use it to determine genotype
-    //map<Marker, String<AttributeLine> >::iterator itEnd = mapPerMarker.end();
-    //for (map<Marker, String<AttributeLine> >::iterator it = mapPerMarker.begin(); it != itEnd; ++it)
     map<Marker, String<AttributeLine> >::iterator it = mapPerMarker.begin();
     while (mapPerMarker.size()>0)
     {
@@ -1198,7 +1224,15 @@ int main(int argc, char const ** argv)
                 break;
             ++loops;
             geomP = 1/(fmod(markerToStepSum[thisMarker]/(float)length(currentMarker),1.0)+1);
+            if (markerToPosNegSums[thisMarker].i1 + markerToPosNegSums[thisMarker].i2 > 0)
+            {
+                posSlippProb = markerToPosNegSums[thisMarker].i1/(markerToPosNegSums[thisMarker].i1 + markerToPosNegSums[thisMarker].i2);
+                negSlippProb = markerToPosNegSums[thisMarker].i2/(markerToPosNegSums[thisMarker].i1 + markerToPosNegSums[thisMarker].i2);
+            }
+            else
+                posSlippProb = negSlippProb = 0.5;
             cout << "Stutter rate for " << thisMarker.chrom << ":" << thisMarker.start << "-" << thisMarker.end << " is: " << geomP << "\n";
+            cout << "posSlippProb: " << posSlippProb << " negSlippProb: " << negSlippProb << endl;
             allelesAtMarker = markerToAlleles[thisMarker];
             numOfAlleles = allelesAtMarker.size();
             markerToAlleles[thisMarker].clear();
@@ -1213,8 +1247,9 @@ int main(int argc, char const ** argv)
             markerToLabelsAndSlipp[thisMarker].i1.p1 = Pair<int,double>(0,0);
             markerToLabelsAndSlipp[thisMarker].i1.p2 = Pair<int,double>(0,0);
             markerToLabelsAndSlipp[thisMarker].i1.p3 = Pair<int,double>(0,0);
-            //Nullset the averageStepSize map
+            //Nullset the averageStepSize map and posNeg slippSum map
             markerToStepSum[thisMarker] = 0.0;
+            markerToPosNegSums[thisMarker] = Pair<double>(0.0,0.0);
             int idx = 0;
             prob.y = Malloc(double,prob.l);
             prob.x = (feature_node **) malloc(prob.l * sizeof(feature_node *));
@@ -1272,7 +1307,7 @@ int main(int argc, char const ** argv)
                     }
                     genotypesToConsider = makeGenotypes(allelesToConsider, thisMarker.refRepeatNum).genotypes;
                     //make decision about genotype for PnId at the current marker.
-                    changed = determineGenotype(reads, markerToLabelsAndSlipp[thisMarker].i2+pnToSize[PnId], genotypesToConsider, numOfAlleles, thisMarker.motif.size(), geomP);
+                    changed = determineGenotype(reads, markerToLabelsAndSlipp[thisMarker].i2+pnToSize[PnId], genotypesToConsider, numOfAlleles, thisMarker.motif.size(), geomP, posSlippProb, negSlippProb, thisMarker);
                     Pair<bool> alleleConfidence = genotypeIsConfident(changed.i1);
                     if (alleleConfidence.i1)
                         markerToTrueAlleles[thisMarker].insert(changed.i1.genotype.i1);
@@ -1316,7 +1351,7 @@ int main(int argc, char const ** argv)
                 allelesToConsider.insert(currAllele);
             }
             genotypesToConsider = makeGenotypes(allelesToConsider, thisMarker.refRepeatNum).genotypes;
-            changed = determineGenotype(reads, markerToLabelsAndSlipp[thisMarker].i2+pnToSize[PnId], genotypesToConsider, numOfAlleles, thisMarker.motif.size(), geomP);
+            changed = determineGenotype(reads, markerToLabelsAndSlipp[thisMarker].i2+pnToSize[PnId], genotypesToConsider, numOfAlleles, thisMarker.motif.size(), geomP, posSlippProb, negSlippProb, thisMarker);
             Pair<bool> alleleConfidence = genotypeIsConfident(changed.i1);
             if (alleleConfidence.i1)
                 markerToTrueAlleles[thisMarker].insert(changed.i1.genotype.i1);
