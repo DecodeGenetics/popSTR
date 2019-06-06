@@ -1156,7 +1156,7 @@ int main(int argc, char const ** argv)
         while (idx < length(marker.second.i1) && marker.second.i1[idx] == 0)
             ++idx;
         //Check if any pn has available reads
-        if (marker.second.i1[idx] == 0)
+        if (marker.second.i1[idx] == 0 || idx >= length(marker.second.i1))
             continue;
         rewind(marker.second.i2);
         for (unsigned i=0; i<length(marker.second.i1); ++i)
