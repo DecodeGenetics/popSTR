@@ -112,7 +112,7 @@ ArgumentParser::ParseResult parseCommandLine(ComputePnSlippageOptions & options,
     addOption(parser, ArgParseOption("PL", "pnList", "A list of PNs whose slippage will be estimated.", ArgParseArgument::INPUT_FILE, "IN-FILE"));
     setRequired(parser, "pnList");
 
-    addOption(parser, ArgParseOption("AF", "attributesDirectory", "Path to attributes file for the individual to estimate a slippage rate for.", ArgParseArgument::INPUT_FILE, "IN-FILE"));
+    addOption(parser, ArgParseOption("AD", "attributesDirectory", "Path to attributes directory.", ArgParseArgument::INPUT_FILE, "IN-FILE"));
     setRequired(parser, "attributesDirectory");
 
     addOption(parser, ArgParseOption("OF", "outputFile", "The slippage rate estimated will be appended to this file.", ArgParseArgument::INPUT_FILE, "OUT-FILE"));
@@ -167,6 +167,7 @@ void readMarkerSlippage(ifstream& markerSlippageFile, CharString regressionModel
     Marker currMarker;
     string tempVal;
     CharString currMarkerModelDir = regressionModelDirectory;
+    //unsigned i = 1;
     while (!markerSlippageFile.eof())
     {
         markerSlippageFile >> currMarker.chrom;
@@ -187,6 +188,9 @@ void readMarkerSlippage(ifstream& markerSlippageFile, CharString regressionModel
         const char *model_in_file = toCString(currMarkerModelDir);
         markerToStats[currMarker].regressionModel = load_model(model_in_file);
         currMarkerModelDir = regressionModelDirectory;
+        //if (i % 1000==0 && i>0)
+            //cout << "Working on marker number: " << i << endl;
+        //i++;
     }
     cout << "Finished reading marker slippage." << endl;
 }
@@ -414,22 +418,22 @@ bool determineGenotype(String<AttributeLine>& reads, double s_ij, String<Pair<fl
                 currentGenotype.insert(readToCheck.numOfRepeats);
             if (isHomo)
             {
-                if (readToCheck.numOfRepeats < genotypeToCheck.i1)
+                if (readToCheck.numOfRepeats - genotypeToCheck.i1 < -0.9)
                     posNegSlipp = negSlippProb;
-                if (readToCheck.numOfRepeats > genotypeToCheck.i1)
+                if (readToCheck.numOfRepeats - genotypeToCheck.i1 > 0.9)
                     posNegSlipp = posSlippProb;
                 diff = fabs(readToCheck.numOfRepeats - genotypeToCheck.i1);
                 probs[i] *= (readToCheck.pValue * dgeom(static_cast<int>(roundf((diff-(float)floor(diff))*motifLength)), psucc) * dpois(floor(diff), lambda) * posNegSlipp + ((double)(1.0-readToCheck.pValue)/(double)numberOfAlleles));
             }
             else
             {
-                if (readToCheck.numOfRepeats < genotypeToCheck.i1)
+                if (readToCheck.numOfRepeats - genotypeToCheck.i1 < -0.9)
                     posNegSlipp = negSlippProb;
-                if (readToCheck.numOfRepeats > genotypeToCheck.i1)
+                if (readToCheck.numOfRepeats - genotypeToCheck.i1 > 0.9)
                     posNegSlipp = posSlippProb;
-                if (readToCheck.numOfRepeats < genotypeToCheck.i2)
+                if (readToCheck.numOfRepeats - genotypeToCheck.i2 < -0.9)
                     posNegSlipp2 = negSlippProb;
-                if (readToCheck.numOfRepeats > genotypeToCheck.i2)
+                if (readToCheck.numOfRepeats - genotypeToCheck.i2 > 0.9)
                     posNegSlipp2 = posSlippProb;
                 diff = fabs(readToCheck.numOfRepeats - genotypeToCheck.i1);
                 diff2 = fabs(readToCheck.numOfRepeats - genotypeToCheck.i2);
@@ -496,8 +500,8 @@ long int readOffSets(ifstream & attsFile, unsigned firstPnIdx, unsigned nPns)
         ++firstPnIdx;
         attsFile >> offset;
     }
-    cout << "firstPnIdx: " << firstPnIdx << "\n";
-    cout << "offset: "<< offset << "\n";
+    //cout << "firstPnIdx: " << firstPnIdx << "\n";
+    //cout << "offset: "<< offset << "\n";
     if (firstPnIdx > nPns)
         return 0;
     else
@@ -517,6 +521,7 @@ void readMarkerData(CharString attributesDirectory, Marker marker, map<string, L
     append(attributesDirectory, to_string(marker.start));
     append(attributesDirectory, "_");
     append(attributesDirectory, marker.motif);
+    //cout << "Reading data from " << attributesDirectory << endl;
     ifstream attsFile(toCString(attributesDirectory));
     long int offset = readOffSets(attsFile, firstPnIdx, firstPnIdx + pnToLabelProps.size() - 1);
     if (offset != 0)
@@ -623,7 +628,7 @@ int main(int argc, char const ** argv)
         {
             cout << "No markers with more than minimum number of reads for: " << pn.first << endl;
             outputFile << pn.first << "\t" << 0.0 << endl;
-            return 0;
+            continue;
         }
         double current_sp = (0.5*pn.second.p2)/(pn.second.p1 + pn.second.p2 + pn.second.p3);
         double changed = 1, nChanged = 0;

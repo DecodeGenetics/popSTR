@@ -375,9 +375,9 @@ Pair<GenotypeInfo, bool> determineGenotype(String<AttributeLine> reads, double m
             }
             if (isHomo)
             {
-                if (readToCheck.numOfRepeats < genotypeToCheck.i1)
+                if (readToCheck.numOfRepeats - genotypeToCheck.i1 < -0.9)
                     posNegSlipp = negSlippProb;
-                if (readToCheck.numOfRepeats > genotypeToCheck.i1)
+                if (readToCheck.numOfRepeats - genotypeToCheck.i1 > 0.9)
                     posNegSlipp = posSlippProb;
                 diff = fabs(readToCheck.numOfRepeats - genotypeToCheck.i1);
                 if (useGeom)
@@ -387,13 +387,13 @@ Pair<GenotypeInfo, bool> determineGenotype(String<AttributeLine> reads, double m
             }
             else
             {
-                if (readToCheck.numOfRepeats < genotypeToCheck.i1)
+                if (readToCheck.numOfRepeats - genotypeToCheck.i1 < -0.9)
                     posNegSlipp = negSlippProb;
-                if (readToCheck.numOfRepeats > genotypeToCheck.i1)
+                if (readToCheck.numOfRepeats - genotypeToCheck.i1 > 0.9)
                     posNegSlipp = posSlippProb;
-                if (readToCheck.numOfRepeats < genotypeToCheck.i2)
+                if (readToCheck.numOfRepeats - genotypeToCheck.i2 < -0.9)
                     posNegSlipp2 = negSlippProb;
-                if (readToCheck.numOfRepeats > genotypeToCheck.i2)
+                if (readToCheck.numOfRepeats - genotypeToCheck.i2 > 0.9)
                     posNegSlipp2 = posSlippProb;
                 diff = fabs(readToCheck.numOfRepeats - genotypeToCheck.i1);
                 diff2 = fabs(readToCheck.numOfRepeats - genotypeToCheck.i2);
@@ -1317,6 +1317,10 @@ int main(int argc, char const ** argv)
         double geomP = 1/(fmod(markerToStats[thisMarker].stepSum/(float)length(currentMarker),1.0)+1);
         if (markerToStats[thisMarker].posSlippSum + markerToStats[thisMarker].negSlippSum > 0)
         {
+            if (markerToStats[thisMarker].posSlippSum == 0.0)
+                markerToStats[thisMarker].posSlippSum = 0.01 * markerToStats[thisMarker].negSlippSum;
+            if (markerToStats[thisMarker].negSlippSum == 0.0)
+                markerToStats[thisMarker].negSlippSum = 0.01 * markerToStats[thisMarker].posSlippSum;
             posSlippProb = markerToStats[thisMarker].posSlippSum/(markerToStats[thisMarker].posSlippSum + markerToStats[thisMarker].negSlippSum);
             negSlippProb = markerToStats[thisMarker].negSlippSum/(markerToStats[thisMarker].posSlippSum + markerToStats[thisMarker].negSlippSum);
         }
