@@ -966,7 +966,7 @@ ArgumentParser::ParseResult parseCommandLine(MsGenotyperOptions & options, int a
     ArgumentParser parser("msGenotyper");
     setShortDescription(parser, "Microsatellite genotyper");
     setVersion(parser, "1.3");
-    setDate(parser, "March 2019");
+    setDate(parser, "June 2019");
     addUsageLine(parser, "\\fI-AD\\fP attributesDirectory/chromNum \\fI-PNS\\fP pnSlippageFile \\fI-ML\\fP markerList \\fI-I\\fP intervalIndex \\fI-MS\\fP markerSlippageFile \\fI-MD\\fP regressionModelDirectory \\fI-IN\\fP iterationNumber \\fI-FP\\fP firstPnIdx \\fI-VD\\fP vcfOutputDirectory \\fI-VN\\fP vcfFileName  ");
     addDescription(parser, "Performs genptyping for all PNs in the pnSlippageFile over all markers in the markerFile. The genotypes are written to a file specified by the user.");
 

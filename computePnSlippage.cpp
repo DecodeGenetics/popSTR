@@ -80,10 +80,10 @@ struct ComputePnSlippageOptions
 } ;
 ArgumentParser::ParseResult parseCommandLine(ComputePnSlippageOptions & options, int argc, char const ** argv)
 {
-    ArgumentParser parser("computePnSlippage_v2");
+    ArgumentParser parser("computePnSlippage");
     setShortDescription(parser, "Compute slippage rate for a list of individuals.");
     setVersion(parser, "1.4");
-    setDate(parser, "March 2019");
+    setDate(parser, "June 2019");
     addUsageLine(parser, "\\fI-ML\\fP MarkerList \\fI-PL\\fP pnList \\fI-AD\\fP attributesDirectory \\fI-OF\\fP outputFile \\fI-IN\\fP iterationNumber \\fI-FP\\fP firstPnIdx \\fI-NPN\\fP minPnsPerMarker \\fI-MS\\fP markerSlippageFile \\fI-MD\\fP regressionModelDirectory");
     addDescription(parser, "This program will estimate an individual specific slipppage rate for the individuals specified based on the marker slippage rates and models specified.");
 
