@@ -1,0 +1,232 @@
+#!/usr/bin/env python3
+from __future__ import print_function
+
+import argparse
+import logging
+import sys
+from vcf import open_vcf_file, read_vcf_header
+from utilities import tokenizer, to_index, bin2str, get_index2new_index, get_gt
+
+
+def get_an_ordered_list_of_allele_sizes(alleles):
+  s = set()
+  ref_len = len(alleles[0])
+
+  for a in alleles:
+    s.add(len(a) - ref_len)
+
+  lst = sorted(list(s))
+  return lst
+
+
+def get_alleles_leq_gt(alleles, max_size):
+  a = set()
+  b = set()
+
+  for i in range(len(alleles)):
+    if (len(alleles[i]) - len(alleles[0])) <= max_size:
+      a.add(i)
+    else:
+      b.add(i)
+
+  return set(a), set(b)
+
+
+
+def process_call(call, n, p, bins, index2new_index):
+  assert len(bins) > 0
+
+  #print("Processing %s" % call)
+  spl_call = call.split(":")
+  pl = [int(x) for x in spl_call[p].split(",")]
+  pl_vals = []
+
+  new_n = len(bins)
+  new_pl = [999999999] * (new_n*(new_n+1)//2)
+
+  i = 0
+
+  for y in range(n):
+    yt = index2new_index[y]
+
+    for x in range(y+1):
+      assert i < len(pl)
+
+      xt = index2new_index[x]
+
+      if xt <= yt:
+        new_i = to_index(xt, yt)
+      else:
+        new_i = to_index(yt, xt)
+
+      new_pl[new_i] = min(new_pl[new_i], pl[i])
+      i += 1
+
+  # get genotype quality (GQ)
+  gq = sorted(new_pl)[1]
+
+  # get genotype (GT)
+  if gq > 0:
+    gt = get_gt(new_pl, new_n)
+    gt_str = "%d/%d" % (gt[0], gt[1])
+  else:
+    gt_str = "./."
+
+  new_pl_str = ",".join([str(x) for x in new_pl])
+  new_call = "\t%s:%d:%s" % (gt_str, gq, new_pl_str)
+  return new_call
+
+
+def process_vcf_record(vcf_f, f_out, id2bins):
+  for line in vcf_f:
+    it = tokenizer(line.decode("utf-8").rstrip("\n"), '\t')
+    CHROM = next(it)
+    POS = next(it)
+    ID = next(it)
+    REF = next(it)
+    ALT = next(it)
+    QUAL = next(it)
+    FILTER = next(it)
+    INFO = next(it)
+    FORMAT = next(it)
+
+    alleles = [REF] + ALT.split(",")
+    n = len(alleles) # Number of alleles
+
+    # Ignore variants that have too few alleles
+    if n <= 3:
+      continue
+
+    spl_FORMAT = FORMAT.split(":")
+    p = spl_FORMAT.index("PL")
+    pl_all_vals = []
+
+    if ID in id2bins:
+      bins = id2bins[ID]
+      assert len(bins) > 1
+      f_out.write("%s\t%s\t%s:binned\t<%s>\t<%s>" % (CHROM, POS, ID, bin2str(bins[0]), bin2str(bins[1])))
+
+      for bin in bins[2:]:
+        f_out.write(",<%s>" % bin2str(bin))
+
+      f_out.write("\t0\t.\t.\tGT:GQ:PL")
+      index2new_index = get_index2new_index(bins, n)
+
+      for call in it:
+        new_call = process_call(call, n, p, bins, index2new_index)
+        f_out.write(new_call)
+
+      f_out.write("\n")
+    else:
+      asizes = get_an_ordered_list_of_allele_sizes(alleles)
+
+      # Ignore variants that have too few allele sizes
+      if len(asizes) <= 3:
+        continue
+
+      for call in it:
+        spl_call = call.split(":")
+        spl_pl = [int(x) for x in spl_call[p].split(",")]
+        pl_vals = []
+
+        for l in range(1, len(asizes) - 2):
+          max_size = asizes[l]
+          a, b = get_alleles_leq_gt(alleles, max_size) # indices of alleles that are <= max_size
+
+          # process PL matrix
+          pl_00 = 999999
+          pl_01 = 999999
+          pl_11 = 999999
+
+          i = 0
+          assert n*(n+1)//2 == len(spl_pl)
+
+          for y in range(n):
+            yt = y in a
+
+            for x in range(y+1):
+              xt = x in a
+
+              if yt:
+                if xt:
+                  pl_11 = min(pl_11, spl_pl[i])
+                else:
+                  pl_01 = min(pl_01, spl_pl[i])
+              elif xt:
+                pl_01 = min(pl_01, spl_pl[i])
+              else:
+                pl_00 = min(pl_00, spl_pl[i])
+
+              i += 1
+
+          pl_vals.append((pl_00, pl_01, pl_11))
+
+        pl_all_vals.append(pl_vals)
+
+      for l in range(len(pl_vals)):
+        max_size = asizes[l + 1]
+        f_out.write("%s\t%s\t%s:leq%s\t" % (CHROM, POS, ID, str(max_size)))
+        f_out.write("<gt%d>\t<leq%d>\t0\t.\t.\tGT:PL" % (max_size, max_size))
+
+        for s in range(len(pl_all_vals)):
+          pl = pl_all_vals[s][l]
+          assert len(pl) == 3
+
+          if sum(pl) == 0:
+            gt = "./."
+          elif pl[0] == 0:
+            gt = "0/0"
+          elif pl[1] == 0:
+            gt = "0/1"
+          else:
+            gt = "1/1"
+
+          f_out.write("\t%s:%s" % (gt, ",".join([str(x) for x in pl])))
+
+        f_out.write("\n")
+
+
+def read_id2bins(fn):
+  id2bins = {}
+
+  if not fn:
+    return id2bins
+
+  with open(fn, "r") as f:
+    for line in f:
+      if line.startswith("#"):
+        continue
+
+      spl_line = line.rstrip("\n").split("\t")
+      assert len(spl_line) == 2
+      variant_id = spl_line[0]
+      bins = spl_line[1].split(";")
+      sets = []
+
+      for bin in bins:
+        sets.append(set([int(x) for x in bin.split(",")]))
+
+      id2bins[variant_id] = sets
+
+  return id2bins
+
+
+if __name__ == "__main__":
+  parser = argparse.ArgumentParser()
+  parser.add_argument("input", help="Input VCF files. The VCF file may be uncompressed, bgzipped, or gzipped.")
+  parser.add_argument("--id2bins", default="", help="File containing Variant ID and comma-separated allele indexes to bin with bins separated by semicolons. E.g. chr11:12345:SG\t0,1;2;3,6;4,5,7")
+  parser.add_argument("--output", default="-", help="Output VCF file.")
+
+  args = parser.parse_args()
+  id2bins = read_id2bins(args.id2bins)
+
+  vcf_f = open_vcf_file(args.input) # Open the VCF
+
+  with sys.stdout if args.output == "-" else open(args.output, "w") as f_out:
+    ## Handle header
+    header, samples_line = read_vcf_header(vcf_f) # Read the header of the first VCF file
+    f_out.write(header) # Print header of the VCF file
+    f_out.write(samples_line) # Print the samples line
+    process_vcf_record(vcf_f, f_out, id2bins) # Process the VCF records
+
+  vcf_f.close()  # Close the VCF file
