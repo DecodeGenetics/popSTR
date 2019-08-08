@@ -16,18 +16,18 @@ int main(int argc, char const ** argv)
     
     // Try to load index and create on the fly if necessary.
     FaiIndex faiIndex;
-    if (read(faiIndex, argv[1]) != 0)
+    if (!open(faiIndex, argv[1]))
     {
         if (build(faiIndex, argv[1]) != 0)
         {
             cerr << "ERROR: Index could not be loaded or built.\n";
             return 1;
         }
-        if (write(faiIndex) != 0)  // Name is stored from when reading.
+        /*if (write(faiIndex) != 0)  // Name is stored from when reading.
         {
             cerr << "ERROR: Index could not be written do disk.\n";
             return 1;
-        }
+        }*/
     }
     
     //Open file containing marker locations
@@ -39,11 +39,13 @@ int main(int argc, char const ** argv)
     
     // Translate sequence name to index.
     unsigned idx = 0;
-    if (!getIdByName(faiIndex, chromString, idx))
+    if (!getIdByName(idx, faiIndex, chromString))
     {
         cerr << "ERROR: Index does not know about sequence " << chromString << "\n";
         return 1;
     }
+    //Get length of chromosome
+    int LengthOfSeq = sequenceLength(faiIndex, idx);
     
     //Create output stream
     string outputDirectory = argv[3];
@@ -58,7 +60,6 @@ int main(int argc, char const ** argv)
         Dna5String refBf, refAf, refRepSeq;
         int beginPos = 0, endPos = 0;
         double refRepeatNum;                                   
-        int LengthOfSeq = sequenceLength(faiIndex, idx);
         // Read marker coordinates, marker repeatMotif and number of repeats in reference.        
         markerFile >> beginPos;
         markerFile >> endPos;        
@@ -72,19 +73,22 @@ int main(int argc, char const ** argv)
         if (beginPos > endPos)
             endPos = beginPos;
         //Get 1000 bases infront of marker from reference
-        if (readRegion(refBf, faiIndex, idx, max(0,beginPos-1001), beginPos-1) != 0)
+        readRegion(refBf, faiIndex, idx, max(0,beginPos-1001), beginPos-1);
+        if (length(refBf) != 1000)
         {
             cerr << "ERROR: Could not load reference before.\n";
             return 1;
         }
         //Get repeat sequence from reference
-        if (readRegion(refRepSeq, faiIndex, idx, beginPos-1, endPos) != 0)
+        readRegion(refRepSeq, faiIndex, idx, beginPos-1, endPos);
+        if (!length(refRepSeq) > 0)
         {
             cerr << "ERROR: Could not load repeat sequence.\n";
             return 1;
         }
         //Get 1000 bases behind marker from reference
-        if (readRegion(refAf, faiIndex, idx, endPos, min(LengthOfSeq,endPos+1000)) != 0)
+        readRegion(refAf, faiIndex, idx, endPos, min(LengthOfSeq,endPos+1000));
+        if (length(refAf) != 1000)
         {
             cerr << "ERROR: Could not load reference after.\n";
             return 1;
