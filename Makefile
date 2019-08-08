@@ -1,8 +1,7 @@
 # include libraries
-BOOST=/nfs/fs1/bioinfo/apps-x86_64/boost/1.61.0
-HTSLIB=/nfs/prog/bioinfo/apps-x86_64/htslib/1.9
-SEQAN=/odinn/tmp/hannese/git/SeqAnHTS
-#SEQAN=/nfs/prog/bioinfo/apps-x86_64/SeqAnHTS/2018.11.28
+BOOST=./boost/1.61.0
+HTSLIB=./htslib/1.9
+SEQAN=./SeqAnHTS
 
 CXXFLAGS+=-I.
 CXXFLAGS+=-isystem $(SEQAN)/include
