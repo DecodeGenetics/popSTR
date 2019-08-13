@@ -1157,7 +1157,11 @@ int main(int argc, char const ** argv)
             ++idx;
         //Check if any pn has available reads
         if (marker.second.i1[idx] == 0 || idx >= length(marker.second.i1))
+        {
+            rewind(marker.second.i2);
+            fprintf(marker.second.i2, "%i ", -69 );
             continue;
+        }
         rewind(marker.second.i2);
         for (unsigned i=0; i<length(marker.second.i1); ++i)
         {

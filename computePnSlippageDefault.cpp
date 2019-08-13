@@ -487,6 +487,7 @@ map<string, LabelProps> readPnList(CharString & pnInfoFile)
         slippCount.p3 = 0;
         pnToLabelProps[PN_ID] = slippCount;
     }
+    cout << "Finished reading PnList.\n";
     return pnToLabelProps;
 }
 
@@ -494,8 +495,12 @@ long int readOffSets(ifstream & attsFile, unsigned firstPnIdx, unsigned nPns)
 {
     long int offset;
     for (unsigned i = 1; i<=firstPnIdx; ++i)
+    {
         attsFile >> offset;
-    while (offset == 0)
+        if (offset == -69)
+            return 0;
+    }
+    while (offset == 0 && !attsFile.eof())
     {
         ++firstPnIdx;
         attsFile >> offset;

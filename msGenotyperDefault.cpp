@@ -1021,7 +1021,11 @@ long int readOffSets(ifstream & attsFile, unsigned firstPnIdx)
 {
     long int offset;
     for (unsigned i = 1; i<=firstPnIdx; ++i)
+    {
         attsFile >> offset;
+        if (offset == -69)
+            return 0;
+    }
     while (offset == 0)
         attsFile >> offset;
     return offset;
