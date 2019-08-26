@@ -786,15 +786,16 @@ int main(int argc, char const ** argv)
 {
     time_t begin = time(0);
     //Check arguments.
-    if (argc != 7)
+    if (argc != 8)
     {
-        cerr << "USAGE: " << argv[0] << " bamFiles outputDirectory markerInfoFile minFlankLength maxRepeatLength chrom\n";
+        cerr << "USAGE: " << argv[0] << " bamFiles outputDirectory markerInfoFile minFlankLength maxRepeatLength chrom reference\n";
         return 1;
     }
     //Store maximum repeat length
     int maxRepeatLength = lexicalCast<int>(argv[5]), minFlank = lexicalCast<int>(argv[4]);
     //Store parameters
     CharString bamListFile = argv[1], markerInfoFile = argv[3], attributeDirectory = argv[2], chrom = argv[6];
+    const char* reference = argv[7];
     //Read pn info
     String<Pair<CharString> > PnsAndBams = readBamList(bamListFile);
     unsigned nPns = length(PnsAndBams);
@@ -856,7 +857,13 @@ int main(int argc, char const ** argv)
         //Set up hts file and index for jumping to correct chromosome
         CharString PN_ID = PnsAndBams[i].i1;
         HtsFile hts_file(toCString(PnsAndBams[i].i2), "r");
-        
+        int ret2 = hts_set_fai_filename(hts_file.fp, reference);
+        if (ret2 < 0)
+        {
+          std::cerr << "ERROR: Could not open reference FASTA file with filename " << argv[7] << std::endl;
+          return 1;
+        }
+
         //CharString bamPathIn = PnsAndBams[i].i2, baiPathIn = PnsAndBams[i].i2;
         //BamFileIn bamFileIn;
         //open(bamFileIn, toCString(bamPathIn));
