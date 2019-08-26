@@ -852,22 +852,24 @@ int main(int argc, char const ** argv)
     {
         //Time process for each PN 
         time_t pnStart = time(0);
-        //Set up bam file and index for jumping to correct chromosome
-        CharString bamPathIn = PnsAndBams[i].i2, baiPathIn = PnsAndBams[i].i2;
+        
+        //Set up hts file and index for jumping to correct chromosome
         CharString PN_ID = PnsAndBams[i].i1;
-        BamFileIn bamFileIn;
-        open(bamFileIn, toCString(bamPathIn));
+        HtsFile hts_file(toCString(PnsAndBams[i].i2), "r");
+        
+        //CharString bamPathIn = PnsAndBams[i].i2, baiPathIn = PnsAndBams[i].i2;
+        //BamFileIn bamFileIn;
+        //open(bamFileIn, toCString(bamPathIn));
         
         int jumpStart = std::max(0,markers[0].STRstart - 2000);
         int jumpEnd = jumpStart + 300000000;
-        append(baiPathIn,".bai");
-        if (!loadIndex(bamFileIn, toCString(baiPathIn)))
+        if (!loadIndex(hts_file))
         {
-            std::cerr << "ERROR: Could not read BAI index file " << baiPathIn << "\n";
+            std::cerr << "ERROR: Could not read index file for " << PnsAndBams[i].i2 << "\n";
             return 1;
         }
 
-        if (!setRegion(bamFileIn, toCString(markers[0].chrom), jumpStart, jumpEnd))
+        if (!setRegion(hts_file, toCString(markers[0].chrom), jumpStart, jumpEnd))
         {
             cerr << "ERROR: Could not jump to " << markers[0].chrom << ":" << 0 << "\n";
             return 1;
@@ -882,7 +884,7 @@ int main(int argc, char const ** argv)
         unsigned markerIndex = 0;
         BamAlignmentRecord record;
         unsigned numToLook;
-        while (readRegion(record, bamFileIn))
+        while (readRegion(record, hts_file))
         {
             //If the read is a duplicate or doesn't pass the quality check I move on
             if (hasFlagQCNoPass(record) || hasFlagDuplicate(record))
