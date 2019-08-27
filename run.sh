@@ -1,10 +1,11 @@
 #!/bin/bash
 BAMLIST=$1
+REFERENCE=$2
 #run computeReadAttributes for all chromosomes in parallel
 echo "Computing read attributes."
 for i in {1..22}
 do
-    echo "computeReadAttributes ${BAMLIST} . markerInfo/chr${i}markerInfo 8 135 chr${i}"
+    echo "computeReadAttributes ${BAMLIST} . markerInfo/chr${i}markerInfo 8 135 chr${i} ${REFERENCE}"
 done | parallel
 
 #run computePnSlippageDefault to get pnSlipps using kernel

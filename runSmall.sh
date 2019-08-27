@@ -1,9 +1,10 @@
 #!/bin/bash
 BAMLIST=$1
+REFERENCE=$2
 
 #Compute attributes for chr21 markers (from kernel)
-echo "computeReadAttributes ${BAMLIST} . ./kernel/kernelMarkersInfo 8 135 chr21"
-computeReadAttributes ${BAMLIST} . ./kernel/kernelMarkersInfo 8 135 chr21
+echo "computeReadAttributes ${BAMLIST} . ./kernel/kernelMarkersInfo 8 135 chr21 ${REFERENCE}"
+computeReadAttributes ${BAMLIST} . ./kernel/kernelMarkersInfo 8 135 chr21 ${REFERENCE}
 
 #Compute pnSlippage for samples in BAMLIST
 echo "computePnSlippageDefault -PL <(cols 1 ${BAMLIST}) -AD ./attributes/chr21 -OF pnSlippage -FP 1 -MS ./kernel/kernelSlippageRates -MD ./kernel/kernelModels"
