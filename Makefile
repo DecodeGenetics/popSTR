@@ -1,7 +1,8 @@
 # include libraries
-BOOST=./boost/1.61.0
-HTSLIB=./htslib/1.9
-SEQAN=./SeqAnHTS
+PWD:=$(shell pwd)
+BOOST=$(PWD)/boost/1.61.0
+HTSLIB=$(PWD)/htslib/1.9
+SEQAN=$(PWD)/SeqAnHTS
 
 CXXFLAGS+=-I.
 CXXFLAGS+=-isystem $(SEQAN)/include
