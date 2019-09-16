@@ -4,8 +4,8 @@ REFERENCE=$2
 CODE_DIR=`dirname $0`
 
 #Compute attributes for chr21 markers (from kernel)
-echo "${CODE_DIR}/computeReadAttributes ${BAMLIST} . ${CODE_DIR}/kernel/kernelMarkersInfo 8 135 chr21 ${REFERENCE}"
-${CODE_DIR}/computeReadAttributes ${BAMLIST} . ${CODE_DIR}/kernel/kernelMarkersInfo 8 135 chr21 ${REFERENCE}
+echo "${CODE_DIR}/computeReadAttributes ${BAMLIST} . ${CODE_DIR}/kernel/kernelMarkersInfo 8 135 chr21 ${REFERENCE} ${CODE_DIR}/markerInfo/longRepeats N"
+${CODE_DIR}/computeReadAttributes ${BAMLIST} . ${CODE_DIR}/kernel/kernelMarkersInfo 8 135 chr21 ${REFERENCE} ${CODE_DIR}/markerInfo/longRepeats N
 
 #Compute pnSlippage for samples in BAMLIST
 echo "${CODE_DIR}/computePnSlippageDefault -PL <(cols 1 ${BAMLIST}) -AD ./attributes/chr21 -OF pnSlippage -FP 1 -MS ${CODE_DIR}/kernel/kernelSlippageRates -MD ${CODE_DIR}/kernel/kernelModels"

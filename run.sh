@@ -8,7 +8,7 @@ CURR_DIR=`pwd`
 echo "Computing read attributes."
 for i in {1..22}
 do
-    echo "${CODE_DIR}/computeReadAttributes ${BAMLIST} ${CURR_DIR} ${CODE_DIR}/markerInfo/chr${i}markerInfo 8 135 chr${i} ${REFERENCE}"
+    echo "${CODE_DIR}/computeReadAttributes ${BAMLIST} ${CURR_DIR} ${CODE_DIR}/markerInfo/chr${i}markerInfo 8 135 chr${i} ${REFERENCE} ${CODE_DIR}/markerInfo/longRepeats N"
 done | parallel
 
 #run computePnSlippageDefault to get pnSlipps using kernel
