@@ -5,6 +5,7 @@
 #include <ctime>
 #include <math.h>
 #include <limits.h>
+#include <unistd.h>
 #include <vector>
 #include <numeric>
 #include <sstream>
@@ -908,7 +909,10 @@ void readPnSlippage(CharString & pnSlippageFile, String<string> & PnIds)
 {
     ifstream pnSlippageStream(toCString(pnSlippageFile));
     if(pnSlippageStream.fail())
-        cout << "Unable to locate pnSlippageFile @ " << pnSlippageFile << endl;
+    {
+        cerr << "Unable to locate pnSlippageFile @ " << pnSlippageFile << endl;
+        return;
+    }
     string PnId;
     int nMarkers;
     double currPnSlipp;
@@ -923,12 +927,14 @@ void readPnSlippage(CharString & pnSlippageFile, String<string> & PnIds)
     pnSlippageStream.close();
 }
 
-String<Pair<int, string> > readMarkers(CharString & markerFile)
+void readMarkers(CharString & markerFile, map<Pair<int, string>, Pair<double> > & markerToSlippAndStutt)
 {
     ifstream markerStream(toCString(markerFile));
     if(markerStream.fail())
-        cout << "Unable to locate markerList @ " << markerFile << endl;
-    String<Pair<int, string> > markerList;
+    {
+        cerr << "Unable to locate markerList @ " << markerFile << endl;
+        return;
+    }
     string line;
     while (getline(markerStream, line))
     {
@@ -936,13 +942,14 @@ String<Pair<int, string> > readMarkers(CharString & markerFile)
         
         string col1, motif;
         int startPos, col3;
+        double slipp, stutt;
 
-        iss >> col1 >> startPos >> col3 >> motif;
-        Pair<int, string> currPair = Pair<int, string>(startPos, motif); 
-        appendValue(markerList, currPair);
+        iss >> col1 >> startPos >> col3 >> motif >> slipp >> stutt;
+        Pair<int, string> currPair = Pair<int, string>(startPos, motif);
+        markerToSlippAndStutt[currPair] = Pair<double>(slipp, stutt);
     }
     markerStream.close();
-    return markerList;
+    return;
 }
 
 inline bool exists(const std::string& name)
@@ -1003,7 +1010,6 @@ Pair<double, int> estimateSlippage(String<string> PnIds, map<Pair<string,Marker>
         slippFragments.push_back((weights[i]/weightSum)*((fullMotifSlippageSum/currPvalSum)-currPnSlipp));
     }
     result = std::max(0.0,accumulate(slippFragments.begin(),slippFragments.end(),0.0));
-    cout << "Slippage rate: " << result << endl;
     return Pair<double, int>(result, nAvailable);
 }
 
@@ -1053,9 +1059,21 @@ int main(int argc, char const ** argv)
     bool enoughReads = true;
     //Read the slippage rate for all PNs into the pnToSize map and list of markers to genotype.
     readPnSlippage(options.pnSlippageFile, PnIds);
-    cout << "Finished reading pnSlipp, number of PNs: " << length(PnIds) << "\n";
-    String<Pair<int, string> > markersToGenotype = readMarkers(options.markerList);
-    cout << "Finished reading markerList, number of markers: " << length(markersToGenotype) << "\n";
+    if (length(PnIds) == 0)
+    {
+        cerr << "Failed to read pn slippage for any pn." << endl;
+        return 1;
+    }
+    cout << "Number of PNs: " << length(PnIds) << "\n";
+    bool enoughForEstimation = length(PnIds) >= 20;
+    map<Pair<int, string>, Pair<double> > markerToSlippAndStutt;
+    readMarkers(options.markerList, markerToSlippAndStutt);
+    if (markerToSlippAndStutt.size() == 0)
+    {
+        cerr << "Failed to read any markers to genotype." << endl;
+        return 1;
+    }
+    cout << "Number of markers: " << markerToSlippAndStutt.size() << "\n";
     //Map from marker to all reads covering it
     map<Marker, String<AttributeLine> > mapPerMarker;
     //Count the total number of alleles in the population for each marker -- by checking the size of the set
@@ -1081,12 +1099,12 @@ int main(int argc, char const ** argv)
 
     //Iterate over all markers in the markerList and read from their attribute files
     int nProcessedMarkers = 0;
-    for (unsigned i=0; i<length(markersToGenotype); ++i)
+    for (auto const & listMarker : markerToSlippAndStutt)
     {
         //Make path to attributefile for current marker
-        append(attributePath, to_string(markersToGenotype[i].i1));
+        append(attributePath, to_string(listMarker.first.i1));
         append(attributePath, "_");
-        append(attributePath, markersToGenotype[i].i2);
+        append(attributePath, listMarker.first.i2);
         bool is_gz = false;
         io::filtering_istream attributeFile_gz;
         ifstream attributeFile;
@@ -1163,17 +1181,19 @@ int main(int argc, char const ** argv)
     
     //Make header for vcf file
     makeVcfHeader(out, PnIds, chrom);
-    //cout << "Number of markers: " << mapPerMarker.size() << endl;
-    //cout << "Number of pns: " << length(PnIds) << endl;
-    //for (unsigned i=0; i<length(PnIds);++i)
-        //cout << PnIds[i] << "\t";
-    //cout << endl;
 
     double *prob_estimates = NULL;
     double predict_label;
     float changedRatio;
     int PnsAtMarker, updatedPns;
     unsigned numOfAlleles;
+    //Find path to the binary and assume the default model is stored there
+    char result[ PATH_MAX ];
+    ssize_t countZ = readlink( "/proc/self/exe", result, PATH_MAX );
+    std::string printMe = std::string( result, (countZ > 0) ? countZ : 0 );
+    std::size_t found = printMe.find_last_of("/\\");
+    CharString defaultModel = printMe.substr(0,found);
+    append(defaultModel,"/markerInfo/defaultModel");
     //Initialize parameter object for logistic regression
     param.solver_type = 0;
     param.C = 1;
@@ -1208,6 +1228,7 @@ int main(int argc, char const ** argv)
     MakeGenotypesRet genotypesAtThisMarker;
     double alleleDistance, geomP, posSlippProb, negSlippProb;
     Pair<double, int> slippAndNavail;
+    Pair<int, string> sAndM;
 
     //Loop over map from Marker to string<AttributeLine> and train model for each marker and use it to determine genotype
     map<Marker, String<AttributeLine> >::iterator it = mapPerMarker.begin();
@@ -1227,8 +1248,14 @@ int main(int argc, char const ** argv)
             if (loops > 10)
                 break;
             ++loops;
-            geomP = 1/(fmod(markerToStepSum[thisMarker]/(float)length(currentMarker),1.0)+1);
-            if (markerToPosNegSums[thisMarker].i1 + markerToPosNegSums[thisMarker].i2 > 0)
+            if (enoughForEstimation)
+                geomP = 1/(fmod(markerToStepSum[thisMarker]/(float)length(currentMarker),1.0)+1);
+            else
+            {
+                sAndM = Pair<int, string>(thisMarker.start, thisMarker.motif);
+                geomP = markerToSlippAndStutt[sAndM].i2;
+            }
+            if (markerToPosNegSums[thisMarker].i1 + markerToPosNegSums[thisMarker].i2 > 0 && enoughForEstimation)
             {
                 if (markerToPosNegSums[thisMarker].i1 == 0.0)
                     markerToPosNegSums[thisMarker].i1 = 0.01 * markerToPosNegSums[thisMarker].i2;
@@ -1246,9 +1273,18 @@ int main(int argc, char const ** argv)
             markerToAlleles[thisMarker].clear();
             markerToAlleleFreqs[thisMarker].i1.clear();
             //Estimate marker slippage and update in markerToLabelsAndSlipp map
-            slippAndNavail = estimateSlippage(PnIds, PnAndMarkerToGenotype, thisMarker, loops);
-            markerToLabelsAndSlipp[thisMarker].i2 = std::max((double)0.0,slippAndNavail.i1);
-            nAvailable = slippAndNavail.i2;
+            if (enoughForEstimation)
+            {
+                slippAndNavail = estimateSlippage(PnIds, PnAndMarkerToGenotype, thisMarker, loops);
+                markerToLabelsAndSlipp[thisMarker].i2 = std::max((double)0.0,slippAndNavail.i1);
+                nAvailable = slippAndNavail.i2;
+            }
+            else
+            {
+                markerToLabelsAndSlipp[thisMarker].i2 = markerToSlippAndStutt[sAndM].i1;
+                cout << markerToLabelsAndSlipp[thisMarker].i2 << endl;
+                nAvailable = length(PnIds);
+            }
             //Reads with label 2 are not included in training
             prob.l = length(currentMarker) - markerToLabelsAndSlipp[thisMarker].i1.p2.i1;
             //Now I "nullSet" the markerToLabelsAndSlipp map for the marker I am looking at so I can update it when I relabel the reads
@@ -1293,8 +1329,14 @@ int main(int argc, char const ** argv)
             error_msg = check_parameter(&prob,&param);
             if (error_msg != NULL)
                 cout << "Error message: " << error_msg << endl;
-            //Train logistic regression model
-            model_ = train(&prob, &param);
+            //Train logistic regression model if we have enough samples and otherwise load default model
+            if (enoughForEstimation)
+                model_ = train(&prob, &param);
+            else
+            {
+                const char *model_in_file = toCString(defaultModel);
+                model_ = load_model(model_in_file);
+            }   
             prob_estimates = (double *) malloc(2*sizeof(double));
             Pair<GenotypeInfo, Pair<bool> > changed;
             PnId = currentMarker[0].PnId;
@@ -1393,16 +1435,16 @@ int main(int argc, char const ** argv)
             continue;
         }
         //Make a Pair<std::set<Pair<float> > String<Pair<float> > > which contains a list and set of genotypes
-        cout << "Number of verified alleles: " << markerToTrueAlleles[thisMarker].size() << endl;
+        //cout << "Number of verified alleles: " << markerToTrueAlleles[thisMarker].size() << endl;
         //Have to add ref allele to true allele set in case no one has it.
         markerToTrueAlleles[thisMarker].insert(thisMarker.refRepeatNum);
         genotypesAtThisMarker = makeGenotypes(markerToTrueAlleles[thisMarker], thisMarker.refRepeatNum);
-        cout << "Number of available genotypes: " << genotypesAtThisMarker.genotypesSet.size() << endl;
+        //cout << "Number of available genotypes: " << genotypesAtThisMarker.genotypesSet.size() << endl;
         //Compute abs(allele1-allele2)*allele1Freq*allele2Freq for all genotypes and return average of those, estimate of distance between alleles.
         //alleleDistance = computeAlleleDist(genotypesAtThisMarker.genotypes, markerToAlleleFreqs[it->first].i1, PnsAtMarker);
         //First fill marker specific fields of vcfRecord
         record = fillRecordMarker(thisMarker, markerToTrueAlleles[thisMarker]);
-        cout << "Finished call to fillRecordMarker." << endl;
+        //cout << "Finished call to fillRecordMarker." << endl;
         //Loop over Pns and fill in PN specific fields of vcfRecord for each PN
         for (unsigned i = 0; i<length(PnIds); ++i)
         {
@@ -1441,8 +1483,8 @@ int main(int argc, char const ** argv)
         markerToAlleleFreqs[thisMarker].i2 = PnsAtMarker;
         PnToAlleles.clear();
         markerSlippageOut << thisMarker.chrom << "\t" << thisMarker.start << "\t" << thisMarker.end << "\t" << thisMarker.motif << "\t" << thisMarker.refRepeatNum << "\t" << setprecision(4) << fixed << markerToLabelsAndSlipp[thisMarker].i2 << "\t" << geomP << "\t" << nAvailable<< endl;
-        cout << thisMarker.start << " totalSlipp: " << setprecision(4) << fixed << markerToLabelsAndSlipp[thisMarker].i2 << endl;
-        cout << "Finished marker number: " << z << endl;
+        //cout << thisMarker.start << " totalSlipp: " << setprecision(4) << fixed << markerToLabelsAndSlipp[thisMarker].i2 << endl;
+        //cout << "Finished marker number: " << z << endl;
         mapPerMarker.erase(thisMarker);
         it = mapPerMarker.begin();
         ++z;
