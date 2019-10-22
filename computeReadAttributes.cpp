@@ -1153,7 +1153,7 @@ int main(int argc, char * argv[])
         }
 
         //Variables for the start and end coordinates of reads and their mates, length of read, how many repeats to look for and index into string storing marker information
-        unsigned bamStart, bamEnd, mateStart, mateEnd, readLength, markerIndex = 0, motifLength = length(markers[currentMarker].motif), numToLook = repeatNumbers[motifLength-1];
+        unsigned bamStart, bamEnd, mateStart, mateEnd, readLength, markerIndex = 0, motifLength = length(markers[markerIndex].motif), numToLook = repeatNumbers[motifLength-1];
         //Map from read name, marker chromosome and marker start to info on read-pair with that read name
         unordered_map<Triple<CharString, CharString, int>, ReadInfo> myMap;
         BamAlignmentRecord record;;
@@ -1174,7 +1174,7 @@ int main(int argc, char * argv[])
             while (bamStart > markers[markerIndex].STRend + 1000)
             {
                 ++markerIndex;
-                motifLength = length(markers[currentMarker].motif);
+                motifLength = length(markers[markerIndex].motif);
                 numToLook = repeatNumbers[motifLength-1];
                 //If the markerIndex has exceeded the length of the marker string I can't check the while condition (markers[markerIndex].STRend doesn't exist) so I break
                 if (markerIndex > finalMarkerIdx)
