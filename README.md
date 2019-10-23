@@ -4,28 +4,28 @@
 
 1.Download zip of source code: https://github.com/DecodeGenetics/popSTR/archive/master.zip
 
-2.Unzip source code: `unzip popSTR-master.zip`
+2.Unzip source code: `unzip master.zip`
 
 3.Move to source code directory: `cd popSTR-master/`
 
-4.Unzip library dependencies: `unzip -qq SeqAnHTS.zip` 
-                              `unzip -qq htslib-1.9.zip`
-                              `unzip -qq boost-1.61.0.zip`
-                              `unzip -qq liblinear-2.01.zip`
+4.Run install script `install.sh`
 
-5.Run make command: `make`
+5.[Optional] To make sure installation succeeded, execute runSmall.sh with a bamList(described below) and path to reference: `runSmall.sh bamList reference`
+This will genotype the samples in `bamList` over a set of markers from chr21 and write the results to `./vcfs/chr21_small_0.vcf`. Two other files `pnSlippage` and `markerSlippageChr21_0` are also generated. `pnSlippage` contains slippage rates for all samples in `bamList` and `markerSlippageChr21_0` contains slippage and stutter rates for the genotyped markers.
 
 ## Running popSTR
 
-PopSTR has three steps and one must iterate between steps 2 and 3 five times !or! (RECOMMENDED) -> use the kernel provided([Description here](#kernelization)): 
+PopSTR has three steps and one must iterate between steps 2 and 3 until convergence !or! (RECOMMENDED) -> use the kernel provided([Description here](#kernelization)): 
 
-### 1. computeReadAttributes - Find useable reads, estimate number of repeats in them and compute their attributes for logistic regression.
+Optionally `run.sh bamList reference` genotypes the samples in `bamList` for all the markers provided. (This is not preferable for a large number of samples unless many threads and runtime memory are available).
+
+### 1. computeReadAttributes - Find useable reads, estimate their number of repeats and compute attributes for logistic regression.
 
 Is run for a list of samples over a list of markers.
 
 Call:
 
-    computeReadAttributes bamList outputDirectory markerInfoFile minFlankLength maxRepeatLength chrom
+    computeReadAttributes bamList outputDirectory markerInfoFile minFlankLength maxRepeatLength chrom reference
 
 Parameters:
 
@@ -38,6 +38,7 @@ Parameters:
 * `minFlankLength` - Minimum number of flanking bases required on each side of a repeat for a read to be considered useful.
 * `maxRepeatLength` - All alleles with a basePair length above this number will be lumped together into a greater than allele. Should be set close to 0.5 * readLength in IN.bam.
 * `chrom` - All markers in markerInfoFile must come from this chromosome.
+* `reference` - Path to a fasta file containing the reference the reads were aligned/compressed to. Necessary for CRAM support. 
 
 ## Output:
 First line contains an offset entry for each PN, to make seeking in the file possible.
