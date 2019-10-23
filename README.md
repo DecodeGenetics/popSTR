@@ -15,9 +15,17 @@ This will genotype the samples in `bamList` over a set of markers from chr21 and
 
 ## Running popSTR
 
-PopSTR has three steps and one must iterate between steps 2 and 3 until convergence !or! (RECOMMENDED) -> use the kernel provided([Description here](#kernelization)): 
+To genotype samples listed in `bamList` for all markers on `chrom` in parallel where the number of markers run by each job is equal to `markersPerJob` :
 
-Optionally `run.sh bamList reference` genotypes the samples in `bamList` for all the markers provided. (This is not preferable for a large number of samples unless many threads and runtime memory are available).
+    runPerChrom bamList reference chrom markersPerJob
+
+* `bamList` - Two column file listing all samples to be genotyped, first column: A sample identifier. Second column: Path to the bam file. (An index (.bai file) for all bam files must exist in the same directory)
+* `reference` - Path to a reference file the bam files in `bamList` were aligned to.
+
+
+PopSTR has three steps and one must iterate between steps 2 and 3 until convergence or use the kernel provided([Description here](#kernelization)): 
+
+If you wish to manually run each step of the process, they are described below but we recommend using the provided `runPerChrom.sh` script
 
 ### 1. computeReadAttributes - Find useable reads, estimate their number of repeats and compute attributes for logistic regression.
 
@@ -25,7 +33,7 @@ Is run for a list of samples over a list of markers.
 
 Call:
 
-    computeReadAttributes bamList outputDirectory markerInfoFile minFlankLength maxRepeatLength chrom reference
+    computeReadAttributes bamList outputDirectory markerInfoFile minFlankLength maxRepeatLength chrom reference expansions jumpToExpansions[Y/N]
 
 Parameters:
 
@@ -33,12 +41,14 @@ Parameters:
 * `outputDirectory` - A folder called attributes will be created in the directory if it doesn't exist. A folder called [chrom] (last parameter above) will be created in the attributes folder if it doesn't exist. One file will be created per marker, located at [outputDirectory]/attributes/[chrom]/[start]_[motif] where start is the start coordinate of the marker and motif is the marker's repeat motif.
 * `markerInfoFile` - A file listing the markers to be genotyped, must only contain markers from one chromosome. Marker files for chr1-ch22 are provided. Format for markerInfoFile:
 
-        chrom startCoordinate endCoordinate repeatMotif numOfRepeatsInRef 1000refBasesBeforeStart 1000refBasesAfterEnd repeatSeqFromRef minFlankLeft minFlankRight repeatPurity
+        chrom startCoordinate endCoordinate repeatMotif numOfRepeatsInRef 1000refBasesBeforeStart 1000refBasesAfterEnd repeatSeqFromRef minFlankLeft minFlankRight repeatPurity fractionAinMotif fractionCinMotif fractionGinMotif fractionTinMotif
 
 * `minFlankLength` - Minimum number of flanking bases required on each side of a repeat for a read to be considered useful.
 * `maxRepeatLength` - All alleles with a basePair length above this number will be lumped together into a greater than allele. Should be set close to 0.5 * readLength in IN.bam.
 * `chrom` - All markers in markerInfoFile must come from this chromosome.
 * `reference` - Path to a fasta file containing the reference the reads were aligned/compressed to. Necessary for CRAM support. 
+* `expansions` A list of known long repeat stretches in the reference, provided with the software
+* `jumpToExpansions[Y/N]` Determines whether to examine reads aligned to other repeat locations in the genome with mates close to the marker being considered. Choosing Y will increase runtime but is more precise and intended when closely examinig possibly expanded regions. 
 
 ## Output:
 First line contains an offset entry for each PN, to make seeking in the file possible.
