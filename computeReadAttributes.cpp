@@ -46,12 +46,15 @@ struct STRinfo {
     float refRepeatNum; //Number of repeats in reference sequence
     Dna5String refBf;
     Dna5String refAf;
+    CharString refRepSeq;
     float refRepPurity;
     unsigned minFlankLeft;
     unsigned minFlankRight;
+    unsigned refLenBp;
     std::unordered_set<Dna5String> hash8beforeSet;
     std::unordered_set<Dna5String> hash8afterSet;
     vector<float> motifFrqs;
+    string MFLrefRepSeqMFR;
 } ;
 
 //Structure to store marker information
@@ -215,7 +218,7 @@ std::unordered_set<Dna5String> createPermutations(Dna5String motifRepeat)
 Pair<Pair<int>, float> findPatternPrim(Dna5String motif, BamAlignmentRecord& record, const unsigned motifLength)
 {
     //unsigned motifLength = length(motif);
-    Dna5String pattern = repeat(motif,repeatNumbers[length(motif)-1]);
+    Dna5String pattern = repeat(motif,repeatNumbers[motifLength-1]);
     std::unordered_set<Dna5String> permutations = motifToPermutations[motif];
     unsigned patternLength = length(pattern);
     int startCoordinate = length(record.seq);
@@ -835,9 +838,14 @@ String<STRinfo> readMarkerinfo(CharString & markerInfoFile, int minFlank, CharSt
         currInfo.refAf = refAfString;
         string refRepSeq;
         markerFile >> refRepSeq;
+        currInfo.refLenBp = refRepSeq.length();
+        currInfo.refRepSeq = refRepSeq;
         currInfo.refRepeatNum = (float)refRepSeq.length()/(float)motifString.length();
         markerFile >> currInfo.minFlankLeft;
         markerFile >> currInfo.minFlankRight;
+        currInfo.MFLrefRepSeqMFR = refBfString.substr(1000-currInfo.minFlankLeft, currInfo.minFlankLeft);
+        currInfo.MFLrefRepSeqMFR += refRepSeq;
+        currInfo.MFLrefRepSeqMFR += refAfString.substr(0,currInfo.minFlankRight);
         markerFile >> currInfo.refRepPurity;
         markerFile >> freq;
         currInfo.motifFrqs.push_back(freq);
@@ -1050,6 +1058,26 @@ bool lookForExpansion(bam_hdr_t * header,
     return false;
 }
 
+Pair<Triple<CharString, CharString, int>,ReadInfo> setReference(BamAlignmentRecord & record, STRinfo & marker, unsigned pos)
+{
+    //Create key for storing readInfo in map
+    Triple<CharString, CharString, int> mapKey = Triple<CharString, CharString, int>(record.qName, marker.chrom, marker.STRstart);
+    ReadInfo mapValue;
+    //Insert values into mapValue in returnPair
+    mapValue.STRend = marker.STRend;
+    mapValue.motif = marker.motif;
+    mapValue.refRepeatNum = marker.refRepeatNum;
+    mapValue.ratioBf = 1.0;
+    mapValue.ratioAf = 1.0;
+    mapValue.repSeq = marker.refRepSeq;
+    mapValue.numOfRepeats = marker.refRepeatNum;
+    mapValue.ratioOver20In = findRatioOver20(infixWithLength(record.qual, pos, marker.refLenBp));
+    mapValue.purity = getPurity(marker.motif,mapValue.repSeq);
+    mapValue.locationShift = 0;
+    Pair<Triple<CharString, CharString, int>,ReadInfo> returnValue = Pair<Triple<CharString, CharString, int>,ReadInfo>(mapKey, mapValue);
+    return returnValue;
+}
+
 int main(int argc, char * argv[])
 {
     time_t begin = time(0);
@@ -1139,7 +1167,7 @@ int main(int argc, char * argv[])
         HtsFile hts_file(toCString(PnsAndBams[i].i2), "r", reference);
 
         int jumpStart = std::max(0,markers[0].STRstart - 1000);
-        int jumpEnd = jumpStart + 300000000;
+        int jumpEnd = std::min(markers[finalMarkerIdx].STRend + 1000, jumpStart + 300000000);
         if (!loadIndex(hts_file))
         {
             std::cerr << "ERROR: Could not read index file for " << PnsAndBams[i].i2 << "\n";
@@ -1153,10 +1181,12 @@ int main(int argc, char * argv[])
         }
 
         //Variables for the start and end coordinates of reads and their mates, length of read, how many repeats to look for and index into string storing marker information
-        unsigned bamStart, bamEnd, mateStart, mateEnd, readLength, markerIndex = 0, motifLength = length(markers[markerIndex].motif), numToLook = repeatNumbers[motifLength-1];
+        unsigned bamStart, bamEnd, mateStart, mateEnd, readLength, markerIndex = 0;
+        unsigned motifLength = length(markers[markerIndex].motif);
+        unsigned numToLook = repeatNumbers[motifLength-1];
         //Map from read name, marker chromosome and marker start to info on read-pair with that read name
         unordered_map<Triple<CharString, CharString, int>, ReadInfo> myMap;
-        BamAlignmentRecord record;;
+        BamAlignmentRecord record;
         while (readRegion(record, hts_file))
         {
             //If the read is a duplicate or doesn't pass the quality check I move on
@@ -1174,8 +1204,6 @@ int main(int argc, char * argv[])
             while (bamStart > markers[markerIndex].STRend + 1000)
             {
                 ++markerIndex;
-                motifLength = length(markers[markerIndex].motif);
-                numToLook = repeatNumbers[motifLength-1];
                 //If the markerIndex has exceeded the length of the marker string I can't check the while condition (markers[markerIndex].STRend doesn't exist) so I break
                 if (markerIndex > finalMarkerIdx)
                     break;
@@ -1184,6 +1212,8 @@ int main(int argc, char * argv[])
             if(markerIndex > finalMarkerIdx)
                 break;
             int currentMarker = markerIndex;
+            motifLength = length(markers[markerIndex].motif);
+            numToLook = repeatNumbers[motifLength-1];
 
             //Loop for comparing current read to all possible markers, could be useful for more than one marker
             while (true)
@@ -1204,46 +1234,76 @@ int main(int argc, char * argv[])
                 // Does the read intersect the microsatellite without being unaligned and the mate is within a reasonable distance? -> Then I look for the current repeat motif
                 if (!hasFlagUnmapped(record) && record.rID == record.rNextId && abs(record.tLen) < 100000 && std::min((int) bamEnd, markers[currentMarker].STRend)-std::max((int) bamStart, markers[currentMarker].STRstart) > 0 )
                 {
-                    Pair<Pair<int>, float> coordinates = findPatternPrim(markers[currentMarker].motif, record, motifLength);
-                    int startCoordinate = coordinates.i1.i1;
-                    int endCoordinate = coordinates.i1.i2;
                     Pair<Triple<CharString, CharString, int>,ReadInfo> keyValuePair;
-                    if (endCoordinate>startCoordinate)
-                        keyValuePair.i2.repSeq = infixWithLength(record.seq, startCoordinate, endCoordinate-startCoordinate+1);
-                    //Does the read contain all of the microsatellite and flanking regions larger than the set minimum? -> Then I compute read attributes
-                    if (((endCoordinate-startCoordinate+1 < readLength-2*minFlank) && (endCoordinate > startCoordinate)) || ((endCoordinate > startCoordinate)&&(getPurity(markers[currentMarker].motif, keyValuePair.i2.repSeq)>0.75*markers[currentMarker].refRepPurity)))
+                    //Check if I find reference allele
+                    string stringSeq(seqan::begin(record.seq), seqan::end(record.seq));
+                    std::size_t pos = stringSeq.find(markers[currentMarker].MFLrefRepSeqMFR);
+                    if (pos != std::string::npos)
                     {
-                        keyValuePair = computeReadInfo(record, markers[currentMarker], coordinates, minFlank, maxRepeatLength);
+                        keyValuePair = setReference(record, markers[currentMarker], pos);
                         if (myMap.count(keyValuePair.i1) == 0)
                         {
-                            if (keyValuePair.i2.numOfRepeats == 666)
-                            {
-                                myMap[keyValuePair.i1].numOfRepeats = 666;
-                                myMap[keyValuePair.i1].mateEditDist = getTagValue(record, "NM");
-                            }
-                            else
-                            {
-                                keyValuePair.i2.mateEditDist = 666;
-                                myMap[keyValuePair.i1] = keyValuePair.i2;
-                            }
+                            keyValuePair.i2.mateEditDist = 666;
+                            myMap[keyValuePair.i1] = keyValuePair.i2;
                         }
                         else
                         {
-                            if (myMap[keyValuePair.i1].numOfRepeats == 666)
-                            {
-                                keyValuePair.i2.mateEditDist = myMap[keyValuePair.i1].mateEditDist;
-                                myMap[keyValuePair.i1] = keyValuePair.i2;
-                            }
-                            else
-                                myMap[keyValuePair.i1].mateEditDist = getTagValue(record, "NM");
+                            keyValuePair.i2.mateEditDist = myMap[keyValuePair.i1].mateEditDist;
+                            myMap[keyValuePair.i1] = keyValuePair.i2;
                         }
                         ++currentMarker;
                         //If I've reached the end of the marker string I break this loop and take the next read
                         if (currentMarker > finalMarkerIdx)
+                        {
                             break;
+                        }
                         motifLength = length(markers[currentMarker].motif);
                         numToLook = repeatNumbers[motifLength-1];
                         continue;
+                    }
+                    //Look better if no reference allele
+                    else
+                    {
+                        Pair<Pair<int>, float> coordinates = findPatternPrim(markers[currentMarker].motif, record, motifLength);
+                        int startCoordinate = coordinates.i1.i1;
+                        int endCoordinate = coordinates.i1.i2;
+                        if (endCoordinate>startCoordinate)
+                            keyValuePair.i2.repSeq = infixWithLength(record.seq, startCoordinate, endCoordinate-startCoordinate+1);
+                        //Does the read contain all of the microsatellite and flanking regions larger than the set minimum? -> Then I compute read attributes
+                        if (((endCoordinate-startCoordinate+1 < readLength-2*minFlank) && (endCoordinate > startCoordinate)) || ((endCoordinate > startCoordinate)&&(getPurity(markers[currentMarker].motif, keyValuePair.i2.repSeq)>0.75*markers[currentMarker].refRepPurity)))
+                        {
+                            keyValuePair = computeReadInfo(record, markers[currentMarker], coordinates, minFlank, maxRepeatLength);
+                            if (myMap.count(keyValuePair.i1) == 0)
+                            {
+                                if (keyValuePair.i2.numOfRepeats == 666)
+                                {
+                                    myMap[keyValuePair.i1].numOfRepeats = 666;
+                                    myMap[keyValuePair.i1].mateEditDist = getTagValue(record, "NM");
+                                }
+                                else
+                                {
+                                    keyValuePair.i2.mateEditDist = 666;
+                                    myMap[keyValuePair.i1] = keyValuePair.i2;
+                                }
+                            }
+                            else
+                            {
+                                if (myMap[keyValuePair.i1].numOfRepeats == 666)
+                                {
+                                    keyValuePair.i2.mateEditDist = myMap[keyValuePair.i1].mateEditDist;
+                                    myMap[keyValuePair.i1] = keyValuePair.i2;
+                                }
+                                else
+                                    myMap[keyValuePair.i1].mateEditDist = getTagValue(record, "NM");
+                            }
+                            ++currentMarker;
+                            //If I've reached the end of the marker string I break this loop and take the next read
+                            if (currentMarker > finalMarkerIdx)
+                                break;
+                            motifLength = length(markers[currentMarker].motif);
+                            numToLook = repeatNumbers[motifLength-1];
+                            continue;
+                        }
                     }
                 }
                 // Does the read's mate intersect the microsatellite and the read is not unaligned? -> Then I want the read's edit distance!
