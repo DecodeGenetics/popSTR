@@ -1078,7 +1078,7 @@ Pair<Triple<CharString, CharString, int>,ReadInfo> setReference(BamAlignmentReco
     return returnValue;
 }
 
-int main(int argc, char * argv[])
+int main_1(int argc, char * argv[])
 {
     time_t begin = time(0);
     //Check arguments.
