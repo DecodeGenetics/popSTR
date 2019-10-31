@@ -3,7 +3,6 @@ echo "Unzipping and compiling external libraries"
 unzip -qq SeqAnHTS.zip 
 unzip -qq htslib.zip
 make -C htslib-develop
-unzip -qq boost-1.61.0.zip 
 unzip -qq liblinear-2.01.zip
 echo "Unzipping and relocating markerInfo files"
 mkdir markerInfo

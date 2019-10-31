@@ -1,17 +1,19 @@
 # include libraries
 PWD:=$(shell pwd)
-BOOST=$(PWD)/boost/1.61.0
+#BOOST=$(PWD)/boost/1.61.0
+BOOST_INCLUDE=/usr/include/boost # Change to your paths
+BOOST_LIB=/usr/lib64
 HTSLIB=$(PWD)/htslib-develop
 SEQAN=$(PWD)/SeqAnHTS
 
 CXXFLAGS+=-I.
 CXXFLAGS+=-isystem $(SEQAN)/include
 CXXFLAGS+=-I$(HTSLIB)
-CXXFLAGS+=-isystem $(BOOST)/include
+CXXFLAGS+=-isystem $(BOOST_INCLUDE)
 CXXFLAGS+=-pthread 
 CXXFLAGS+=-Wfatal-errors
 
-LDFLAGS=-g -L$(HTSLIB) -Wl,-rpath,$(HTSLIB) -lz -lhts -L$(BOOST)/lib -Wl,-rpath,$(BOOST)/lib -lboost_iostreams
+LDFLAGS=-g -L$(HTSLIB) -Wl,-rpath,$(HTSLIB) -lz -lhts -L$(BOOST_LIB) -Wl,-rpath,$(BOOST_LIB) -lboost_iostreams
 
 # RELEASE build
 CXXFLAGS+=-O3 -DSEQAN_ENABLE_TESTING=0 -DSEQAN_ENABLE_DEBUG=0 -DSEQAN_HAS_ZLIB=1
