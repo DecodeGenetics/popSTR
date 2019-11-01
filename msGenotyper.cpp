@@ -21,16 +21,12 @@
 #include <boost/iostreams/filtering_streambuf.hpp>
 #include <boost/iostreams/copy.hpp>
 #include <boost/iostreams/filter/gzip.hpp>
-#include <liblinear-2.01/linear.h>
-#include <liblinear-2.01/linear.cpp>
-#include <liblinear-2.01/tron.h>
-#include <liblinear-2.01/tron.cpp>
-#include <liblinear-2.01/blas/blas.h>
-#include <liblinear-2.01/blas/blasp.h>
-#include <liblinear-2.01/blas/daxpy.c>
-#include <liblinear-2.01/blas/ddot.c>
-#include <liblinear-2.01/blas/dnrm2.c>
-#include <liblinear-2.01/blas/dscal.c>
+#include <liblinear.hpp>
+
+
+namespace msGenotyper
+{
+
 #define Malloc(type,n) (type *)malloc((n)*sizeof(type))
 
 namespace io = boost::iostreams;
@@ -797,7 +793,7 @@ String<Pair<int, string> > readMarkers(CharString & markerFile)
         markerStream >> motif;
         if (markerStream.eof() || motif.length() == 0)
             break;
-        Pair<int, string> currPair = Pair<int, string>(startPos, motif); 
+        Pair<int, string> currPair = Pair<int, string>(startPos, motif);
         appendValue(markerList, currPair);
     }
     markerStream.close();
@@ -998,12 +994,12 @@ ArgumentParser::ParseResult parseCommandLine(MsGenotyperOptions & options, int a
     addOption(parser, ArgParseOption("VD", "vcfOutputDirectory", "A directory to write the vcf file to.", ArgParseArgument::OUTPUT_FILE, "OUT-DIR"));
 
     addOption(parser, ArgParseOption("VN", "vcfFileName", "Name of vcf output file.", ArgParseArgument::OUTPUT_FILE, "OUT-FILE"));
-    
+
     ArgumentParser::ParseResult res = parse(parser, argc, argv);
-    
+
     if (res != ArgumentParser::PARSE_OK)
         return res;
-    
+
     getOptionValue(options.attDirChromNum, parser, "attributesDirectory/chromNum");
     append(options.attDirChromNum, "/");
     getOptionValue(options.pnSlippageFile, parser, "pnSlippageFile");
@@ -1024,7 +1020,7 @@ ArgumentParser::ParseResult parseCommandLine(MsGenotyperOptions & options, int a
         options.vcfOutputDirectory = ".";
         options.vcfFileName = "deleteMe";
     }
-    
+
     return ArgumentParser::PARSE_OK;
 }
 
@@ -1071,7 +1067,7 @@ long int readOffSets(ifstream & attsFile, unsigned firstPnIdx)
     return offset;
 }
 
-int main_4(int argc, char const ** argv)
+int main(int argc, char const ** argv)
 {
     //Check arguments.
     MsGenotyperOptions options;
@@ -1090,7 +1086,7 @@ int main_4(int argc, char const ** argv)
         loadModAndLab = false;
 
     //Variable declarations and initializations
-    string PnId, chrom, motif, nextWord, finalItNum = "5";   
+    string PnId, chrom, motif, nextWord, finalItNum = "5";
     int start, end, numberOfReads;
     bool writeVcf = false, enoughReads = true;
     if (options.iterationNumber == finalItNum)
@@ -1147,7 +1143,7 @@ int main_4(int argc, char const ** argv)
             long int offset = readOffSets(attributeFile, options.firstPnIdx);
             if (offset != 0)
                 attributeFile.seekg(offset);
-            else 
+            else
                 continue;
         }
         ++nProcessedMarkers;
@@ -1163,7 +1159,7 @@ int main_4(int argc, char const ** argv)
             numberOfWordsAndWords = countNumberOfWords(nextLine);
             if (numberOfWordsAndWords.i1 == 1)
             {
-                //If I have passed the last pn to genotype 
+                //If I have passed the last pn to genotype
                 if (nextLine > pnToSize.rbegin()->first)
                     break;
                 //Is this PN on my list?
@@ -1549,3 +1545,5 @@ int main_4(int argc, char const ** argv)
     cout << "Finished determining genotypes" << endl;
     return 0;
 }
+
+} // namespace msGenotyper

@@ -37,6 +37,10 @@ namespace std
     };
 }
 
+
+namespace computeReadAttributes
+{
+
 //Structure to store marker information
 struct STRinfo {
     CharString chrom;
@@ -104,6 +108,8 @@ struct ReadPairInfo {
     CharString repSeq; //Repeat sequence in read
 } ;
 
+} // namespace computeReadAttributes
+
 namespace std
 {
 
@@ -138,10 +144,10 @@ struct hash<seqan::Pair<int> >
 };
 
 template <>
-struct hash<STRinfoSmall >
+struct hash<computeReadAttributes::STRinfoSmall >
 {
   std::size_t
-  operator()(STRinfoSmall const & p) const
+  operator()(computeReadAttributes::STRinfoSmall const & p) const
   {
       std::size_t seed = 42;
 
@@ -173,6 +179,9 @@ struct hash<seqan::Triple<CharString, CharString, int> >
 };
 
 } // namespace std
+
+namespace computeReadAttributes
+{
 
 //Vector to check how many repeats I need to find in a read w.r.t. motif length
 std::vector<unsigned> repeatNumbers (6);
@@ -1078,7 +1087,7 @@ Pair<Triple<CharString, CharString, int>,ReadInfo> setReference(BamAlignmentReco
     return returnValue;
 }
 
-int main_1(int argc, char * argv[])
+int main(int argc, char const ** argv)
 {
     time_t begin = time(0);
     //Check arguments.
@@ -1635,3 +1644,5 @@ int main_1(int argc, char * argv[])
     cout << "Total time: " << end - begin << "\n";
     return 0;
 }
+
+} // namespace computeReadAttributes

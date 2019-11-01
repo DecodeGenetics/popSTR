@@ -22,16 +22,11 @@
 #include <boost/iostreams/filtering_stream.hpp>
 #include <boost/iostreams/copy.hpp>
 #include <boost/iostreams/filter/gzip.hpp>
-#include <liblinear-2.01/linear.h>
-#include <liblinear-2.01/linear.cpp>
-#include <liblinear-2.01/tron.h>
-#include <liblinear-2.01/tron.cpp>
-#include <liblinear-2.01/blas/blas.h>
-#include <liblinear-2.01/blas/blasp.h>
-#include <liblinear-2.01/blas/daxpy.c>
-#include <liblinear-2.01/blas/ddot.c>
-#include <liblinear-2.01/blas/dnrm2.c>
-#include <liblinear-2.01/blas/dscal.c>
+#include <liblinear.hpp>
+
+namespace msGenotyperDefault
+{
+
 #define Malloc(type,n) (type *)malloc((n)*sizeof(type))
 
 namespace io = boost::iostreams;
@@ -155,12 +150,12 @@ ArgumentParser::ParseResult parseCommandLine(MsGenotyperOptions & options, int a
 
     addOption(parser, ArgParseOption("FP", "firstPnIdx", "Index of first Pn in pnList within the attributeFile.", ArgParseArgument::INTEGER, "INTEGER"));
     setRequired(parser, "firstPnIdx");
-	
+
 	ArgumentParser::ParseResult res = parse(parser, argc, argv);
-	
+
 	if (res != ArgumentParser::PARSE_OK)
 	    return res;
-	
+
 	getOptionValue(options.attDirChromNum, parser, "attributesDirectory/chromNum");
 	getOptionValue(options.pnSlippageFile, parser, "pnSlippageFile");
 	getOptionValue(options.markerSlippageFile, parser, "markerSlippageFile");
@@ -169,7 +164,7 @@ ArgumentParser::ParseResult parseCommandLine(MsGenotyperOptions & options, int a
 	getOptionValue(options.markerList, parser, "markerList");
 	getOptionValue(options.intervalIndex, parser, "intervalIndex");
     getOptionValue(options.firstPnIdx, parser, "firstPnIdx");
-	
+
 	return ArgumentParser::PARSE_OK;
 }
 
@@ -943,7 +938,7 @@ void readMarkers(CharString & markerFile, map<Pair<int, string>, Pair<double> > 
     while (getline(markerStream, line))
     {
         istringstream iss(line);
-        
+
         string col1, motif;
         int startPos, col3;
         double slipp, stutt;
@@ -1041,7 +1036,7 @@ long int readOffSets(ifstream & attsFile, unsigned firstPnIdx)
     return offset;
 }
 
-int main_5(int argc, char const ** argv)
+int main(int argc, char const ** argv)
 {
     //Check arguments.
     MsGenotyperOptions options;
@@ -1051,7 +1046,7 @@ int main_5(int argc, char const ** argv)
 
     //Assign parameters
     append(options.attDirChromNum, "/");
-    CharString attributePath = options.attDirChromNum;    
+    CharString attributePath = options.attDirChromNum;
     append(options.markerSlippageFile, "_");
     append(options.markerSlippageFile, options.intervalIndex);
     ofstream markerSlippageOut(toCString(options.markerSlippageFile));
@@ -1128,7 +1123,7 @@ int main_5(int argc, char const ** argv)
             long int offset = readOffSets(attributeFile, options.firstPnIdx);
             if (offset != 0)
                 attributeFile.seekg(offset);
-            else 
+            else
                 continue;
         }
         ++nProcessedMarkers;
@@ -1182,7 +1177,7 @@ int main_5(int argc, char const ** argv)
     }
     chrom = marker.chrom;
     cout << "Reading data from input complete." << endl;
-    
+
     //Find path to the binary and assume the default model is stored in the same folder
     char result[ PATH_MAX ];
     ssize_t countZ = readlink( "/proc/self/exe", result, PATH_MAX );
@@ -1199,7 +1194,7 @@ int main_5(int argc, char const ** argv)
     float changedRatio;
     int PnsAtMarker, updatedPns;
     unsigned numOfAlleles;
-    
+
     //Initialize parameter object for logistic regression
     param.solver_type = 0;
     param.C = 1;
@@ -1345,7 +1340,7 @@ int main_5(int argc, char const ** argv)
             {
                 const char *model_in_file = toCString(defaultModel);
                 model_ = load_model(model_in_file);
-            }   
+            }
             prob_estimates = (double *) malloc(2*sizeof(double));
             Pair<GenotypeInfo, Pair<bool> > changed;
             PnId = currentMarker[0].PnId;
@@ -1500,3 +1495,5 @@ int main_5(int argc, char const ** argv)
     cout << "Finished determining genotypes" << endl;
     return 0;
 }
+
+} // namespace msGenotyperDefault

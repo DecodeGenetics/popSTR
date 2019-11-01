@@ -12,16 +12,10 @@
 #include <seqan/modifier.h>
 #include <seqan/stream.h>
 #include <seqan/arg_parse.h>
-#include <liblinear-2.01/linear.h>
-#include <liblinear-2.01/linear.cpp>
-#include <liblinear-2.01/tron.h>
-#include <liblinear-2.01/tron.cpp>
-#include <liblinear-2.01/blas/blas.h>
-#include <liblinear-2.01/blas/blasp.h>
-#include <liblinear-2.01/blas/daxpy.c>
-#include <liblinear-2.01/blas/ddot.c>
-#include <liblinear-2.01/blas/dnrm2.c>
-#include <liblinear-2.01/blas/dscal.c>
+#include <liblinear.hpp>
+
+namespace computePnSlippageDefault
+{
 
 using namespace std;
 using namespace seqan;
@@ -126,16 +120,16 @@ ArgumentParser::ParseResult parseCommandLine(ComputePnSlippageOptions & options,
 
     addOption(parser, ArgParseOption("MD", "modelDirectory", "A directory where logistic regression models for all markers in the markerSlippageFile are stored.", ArgParseArgument::OUTPUT_FILE, "IN-DIR"));
     setRequired(parser, "modelDirectory");
-	
+
 	ArgumentParser::ParseResult res = parse(parser, argc, argv);
-	
+
 	if (res != ArgumentParser::PARSE_OK)
 	    return res;
-	
+
     getOptionValue(options.pnList, parser, "pnList");
     getOptionValue(options.attributesDirectory, parser, "attributesDirectory");
 	getOptionValue(options.outputFile, parser, "outputFile");
-    getOptionValue(options.firstPnIdx, parser, "firstPnIdx"); 
+    getOptionValue(options.firstPnIdx, parser, "firstPnIdx");
 	getOptionValue(options.markerSlippageFile, parser, "markerSlippageFile");
 	getOptionValue(options.modelDirectory, parser, "modelDirectory");
 
@@ -301,7 +295,7 @@ double estimateSlippage(double current_sp, string pnId)
     {
         if ( marker.second.pnToPsum[pnId] == 0.0)
             continue;
-        Pair<string, Marker> mapKey = Pair<string, Marker>(pnId, marker.first); 
+        Pair<string, Marker> mapKey = Pair<string, Marker>(pnId, marker.first);
         String<AttributeLine> readsAtI = markerAndPnToReads[mapKey];
         for (unsigned i=0; i<length(readsAtI); ++i)
         {
@@ -531,7 +525,7 @@ void readMarkerData(CharString attributesDirectory, Marker marker, map<string, L
     long int offset = readOffSets(attsFile, firstPnIdx, firstPnIdx + pnToLabelProps.size() - 1);
     if (offset != 0)
         attsFile.seekg(offset);
-    else 
+    else
         return;
     while (!attsFile.eof() && pnsFound < pnToLabelProps.size())
     {
@@ -596,7 +590,7 @@ void readMarkerData(CharString attributesDirectory, Marker marker, map<string, L
     markerToAllelesAndGenotypes[marker].i2 = makeGenotypes(markerToAllelesAndGenotypes[marker].i1);
 }
 
-int main_3(int argc, char const ** argv)
+int main(int argc, char const ** argv)
 {
     ComputePnSlippageOptions options;
     ArgumentParser::ParseResult res = parseCommandLine(options, argc, argv);
@@ -651,3 +645,5 @@ int main_3(int argc, char const ** argv)
     }
     return 0;
 }
+
+} // namespace computePnSlippageDefault

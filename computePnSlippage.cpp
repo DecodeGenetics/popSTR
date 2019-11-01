@@ -12,17 +12,12 @@
 #include <seqan/modifier.h>
 #include <seqan/stream.h>
 #include <seqan/arg_parse.h>
-#include <liblinear-2.01/linear.h>
-#include <liblinear-2.01/linear.cpp>
-#include <liblinear-2.01/tron.h>
-#include <liblinear-2.01/tron.cpp>
-#include <liblinear-2.01/blas/blas.h>
-#include <liblinear-2.01/blas/blasp.h>
-#include <liblinear-2.01/blas/daxpy.c>
-#include <liblinear-2.01/blas/ddot.c>
-#include <liblinear-2.01/blas/dnrm2.c>
-#include <liblinear-2.01/blas/dscal.c>
 #include <climits>
+#include <liblinear.hpp>
+
+
+namespace computePnSlippage
+{
 
 using namespace std;
 using namespace seqan;
@@ -110,17 +105,17 @@ ArgumentParser::ParseResult parseCommandLine(ComputePnSlippageOptions & options,
     addOption(parser, ArgParseOption("MS", "markerSlippageFile", "A file containing slippage rates for the microsatellites, supplied when iterationNumber>0.", ArgParseArgument::INPUT_FILE, "IN-FILE"));
 
     addOption(parser, ArgParseOption("MD", "regressionModelDirectory", "A directory where logistic regression models for all markers in the markerList are stored, supplied when iterationNumber>0.", ArgParseArgument::INPUTPREFIX, "IN-DIR"));
-    
+
     ArgumentParser::ParseResult res = parse(parser, argc, argv);
-    
+
     if (res != ArgumentParser::PARSE_OK)
         return res;
-    
+
     getOptionValue(options.markerList, parser, "markerList");
     getOptionValue(options.attributesDirectory, parser, "attributesDirectory");
     getOptionValue(options.outputFile, parser, "outputFile");
     getOptionValue(options.iterationNumber, parser, "iterationNumber");
-    getOptionValue(options.firstPnIdx, parser, "firstPnIdx");    
+    getOptionValue(options.firstPnIdx, parser, "firstPnIdx");
 
     if (isSet(parser,"markerSlippageFile"))
     {
@@ -179,7 +174,7 @@ String<Marker> readMarkerList(CharString & markerInfoFile)
         markerFile >> currMarker.start;
         markerFile >> currMarker.end;
         markerFile >> currMarker.motif;
-        
+
         appendValue(markers, currMarker);
     }
     return markers;
@@ -300,7 +295,7 @@ void readMarkerData_level2(CharString attributesDirectory, Marker& marker, map <
     long int offset = readOffSets(attsFile, firstPnIdx, firstPnIdx + pnToLabels.size() - 1);
     if (offset != 0)
         attsFile.seekg(offset);
-    else 
+    else
         return;
     while (!attsFile.eof() && pnsFound < pnToLabels.size())
     {
@@ -372,7 +367,7 @@ void readMarkerData(CharString attributesDirectory, Marker & marker, map<string,
     long int offset = readOffSets(attsFile, firstPnIdx, firstPnIdx + pnToLabelProps.size()-1);
     if (offset < 1)
         return;
-    else 
+    else
         attsFile.seekg(offset);
     //cout <<  "Finished seek command.\n";
     //variable declaration
@@ -453,7 +448,7 @@ void readMarkerData(CharString attributesDirectory, Marker & marker, map<string,
             }
         }
         else
-            cerr << "Something went sideways while reading attributes @: " << attributesDirectory << "\n"; 
+            cerr << "Something went sideways while reading attributes @: " << attributesDirectory << "\n";
     }
 }
 
@@ -573,7 +568,7 @@ void readPnLabels(CharString modelAndLabelDir, CharString iterationNumber, map <
     labelFile.close();
 }
 
-int main_2(int argc, char const ** argv)
+int main(int argc, char const ** argv)
 {
     ComputePnSlippageOptions options;
     ArgumentParser::ParseResult res = parseCommandLine(options, argc, argv);
@@ -593,7 +588,7 @@ int main_2(int argc, char const ** argv)
     //if iterationNumber == 0 just read data and "initialize" estimation
     if (options.iterationNumber == "0")
     {
-        //read pns to estimate slippage for 
+        //read pns to estimate slippage for
         map<string, LabelProps> pnToLabelProps = readPnList(options.pnList);
         cout << "Finished reading " << pnToLabelProps.size() << " pns.\n";
 
@@ -641,3 +636,5 @@ int main_2(int argc, char const ** argv)
 
     return 0;
 }
+
+} // namespace computePnSlippage

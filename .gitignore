@@ -1,0 +1,5 @@
+/SeqAnHTS/
+/htslib-develop/
+/liblinear-2.01/
+/*.o
+/popSTR
