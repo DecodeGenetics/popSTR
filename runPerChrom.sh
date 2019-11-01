@@ -20,10 +20,10 @@ for ((i=1; i<=$lastJobIdx; i++))
 do
     if [ $i -eq $lastJobIdx ]
     then
-        echo "${CODE_DIR}/computeReadAttributes ${BAMLIST} ${CURR_DIR} <(tail -n ${tailNum} ${CODE_DIR}/markerInfo/${CHROM}markerInfo | cut -d ' ' -f 1-11,14-) 8 135 ${CHROM} ${REFERENCE} ${CODE_DIR}/markerInfo/longRepeats N"
+        echo "${CODE_DIR}/popSTR computeReadAttributes ${BAMLIST} ${CURR_DIR} <(tail -n ${tailNum} ${CODE_DIR}/markerInfo/${CHROM}markerInfo | cut -d ' ' -f 1-11,14-) 8 135 ${CHROM} ${REFERENCE} ${CODE_DIR}/markerInfo/longRepeats N"
     else
         headNum=`calc ${i}*${MARKERS_PER_JOB} | cut -d ' ' -f 3 | cut -d '.' -f 1`
-        echo "${CODE_DIR}/computeReadAttributes ${BAMLIST} ${CURR_DIR} <(head -n ${headNum} ${CODE_DIR}/markerInfo/${CHROM}markerInfo | tail -n ${MARKERS_PER_JOB} | cut -d ' ' -f 1-11,14-) 8 135 ${CHROM} ${REFERENCE} ${CODE_DIR}/markerInfo/longRepeats N"
+        echo "${CODE_DIR}/popSTR computeReadAttributes ${BAMLIST} ${CURR_DIR} <(head -n ${headNum} ${CODE_DIR}/markerInfo/${CHROM}markerInfo | tail -n ${MARKERS_PER_JOB} | cut -d ' ' -f 1-11,14-) 8 135 ${CHROM} ${REFERENCE} ${CODE_DIR}/markerInfo/longRepeats N"
     fi
 done | parallel
 
@@ -31,14 +31,14 @@ done | parallel
 chr21dir=${CURR_DIR}/attributes/chr21
 if [ ! -d "$chr21dir" ]; then
     echo "Attributes have not been computed for kernel markers and will be computed now."
-    ${CODE_DIR}/computeReadAttributes ${BAMLIST} ${CURR_DIR} <(cut -d ' ' -f 1-11,14- ${CODE_DIR}/kernel/kernelMarkersInfo) 8 135 chr21 ${REFERENCE} ${CODE_DIR}/markerInfo/longRepeats N
+    ${CODE_DIR}/popSTR computeReadAttributes ${BAMLIST} ${CURR_DIR} <(cut -d ' ' -f 1-11,14- ${CODE_DIR}/kernel/kernelMarkersInfo) 8 135 chr21 ${REFERENCE} ${CODE_DIR}/markerInfo/longRepeats N
 fi
 
 #check if pnSlippage has been computed
 pnSlippageFile=${CURR_DIR}/pnSlippage
 if [ ! -f "$pnSlippageFile" ]; then
     echo "pn-slippage rates have not been estimated and will be estimated now."
-    ${CODE_DIR}/computePnSlippageDefault -PL <(awk '{print $1}' $BAMLIST) -AD ${CURR_DIR}/attributes/chr21 -OF pnSlippage -FP 1 -MS ${CODE_DIR}/kernel/kernelSlippageRates -MD ${CODE_DIR}/kernel/kernelModels
+    ${CODE_DIR}/popSTR computePnSlippageDefault -PL <(awk '{print $1}' $BAMLIST) -AD ${CURR_DIR}/attributes/chr21 -OF pnSlippage -FP 1 -MS ${CODE_DIR}/kernel/kernelSlippageRates -MD ${CODE_DIR}/kernel/kernelModels
 fi
 
 
@@ -52,10 +52,10 @@ for ((i=1; i<=$lastJobIdx; i++))
 do
     if [ $i -eq $lastJobIdx ]
     then
-        echo "${CODE_DIR}/msGenotyperDefault -ADCN ${CURR_DIR}/attributes/${CHROM} -PNS pnSlippage -MS markerSlippage${CHROM} -VD ${CURR_DIR}/vcfs -VN ${CHROM} -ML <(cut -d ' ' -f 1,2,3,4,12,13 ${CODE_DIR}/markerInfo/${CHROM}markerInfo | tail -n ${tailNum}) -I ${lastJobIdx} -FP 1"
+        echo "${CODE_DIR}/popSTR msGenotyperDefault -ADCN ${CURR_DIR}/attributes/${CHROM} -PNS pnSlippage -MS markerSlippage${CHROM} -VD ${CURR_DIR}/vcfs -VN ${CHROM} -ML <(cut -d ' ' -f 1,2,3,4,12,13 ${CODE_DIR}/markerInfo/${CHROM}markerInfo | tail -n ${tailNum}) -I ${lastJobIdx} -FP 1"
     else
         headNum=`calc ${i}*${MARKERS_PER_JOB} | cut -d ' ' -f 3 | cut -d '.' -f 1`
-        echo "${CODE_DIR}/msGenotyperDefault -ADCN ${CURR_DIR}/attributes/${CHROM} -PNS pnSlippage -MS markerSlippage${CHROM} -VD ${CURR_DIR}/vcfs -VN ${CHROM} -ML <(cut -d ' ' -f 1,2,3,4,12,13 ${CODE_DIR}/markerInfo/${CHROM}markerInfo | head -n ${headNum} | tail -n ${MARKERS_PER_JOB}) -I ${i} -FP 1"
+        echo "${CODE_DIR}/popSTR msGenotyperDefault -ADCN ${CURR_DIR}/attributes/${CHROM} -PNS pnSlippage -MS markerSlippage${CHROM} -VD ${CURR_DIR}/vcfs -VN ${CHROM} -ML <(cut -d ' ' -f 1,2,3,4,12,13 ${CODE_DIR}/markerInfo/${CHROM}markerInfo | head -n ${headNum} | tail -n ${MARKERS_PER_JOB}) -I ${i} -FP 1"
     fi
 done | parallel
 
