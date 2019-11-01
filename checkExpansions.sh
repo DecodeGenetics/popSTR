@@ -4,7 +4,7 @@ MaxRepLength=$2
 HG38=$3
 for i in {1,2,3,4,5,6,7,8,9,10,12,13,14,16,18,19,20,21,22,X}
 do
-    ./computeReadAttributes $BAM . ./panelMarkerInfo/chr${i}markerInfo 4 $MaxRepLength chr${i} $HG38 ./markerInfo/longRepeats Y
+    ./popSTR computeReadAttributes $BAM . <(cut -d ' ' -f 1-11,14- ./panelMarkerInfo/chr${i}markerInfo) 4 $MaxRepLength chr${i} $HG38 ./markerInfo/longRepeats Y
 done
 
 while read -r fileName limit
