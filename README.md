@@ -1,6 +1,16 @@
 # PopSTR - A Population based microsatellite genotyper
 
-## Downloading and Installing popSTR
+## Downloading release with static binary
+
+1.Download static binary https://github.com/DecodeGenetics/popSTR/releases/download/2.0/popSTR and zip of source code https://github.com/DecodeGenetics/popSTR/archive/2.0.zip
+
+2.Unzip source code: `unzip popSTR-2.0`
+
+3.Move static binary to source code directory: `mv popSTR popSTR-2.0`
+
+4.Run setup script: `setUp.sh`
+
+## Downloading, compiling and installing popSTR from source code
 
 1.Download zip of source code: https://github.com/DecodeGenetics/popSTR/archive/master.zip
 
