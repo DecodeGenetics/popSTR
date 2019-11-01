@@ -573,7 +573,7 @@ void readPnLabels(CharString modelAndLabelDir, CharString iterationNumber, map <
     labelFile.close();
 }
 
-int main(int argc, char const ** argv)
+int main_2(int argc, char const ** argv)
 {
     ComputePnSlippageOptions options;
     ArgumentParser::ParseResult res = parseCommandLine(options, argc, argv);

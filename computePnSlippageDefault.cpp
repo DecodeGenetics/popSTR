@@ -596,7 +596,7 @@ void readMarkerData(CharString attributesDirectory, Marker marker, map<string, L
     markerToAllelesAndGenotypes[marker].i2 = makeGenotypes(markerToAllelesAndGenotypes[marker].i1);
 }
 
-int main(int argc, char const ** argv)
+int main_3(int argc, char const ** argv)
 {
     ComputePnSlippageOptions options;
     ArgumentParser::ParseResult res = parseCommandLine(options, argc, argv);

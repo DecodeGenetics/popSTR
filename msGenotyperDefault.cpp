@@ -1041,7 +1041,7 @@ long int readOffSets(ifstream & attsFile, unsigned firstPnIdx)
     return offset;
 }
 
-int main(int argc, char const ** argv)
+int main_5(int argc, char const ** argv)
 {
     //Check arguments.
     MsGenotyperOptions options;
