@@ -237,18 +237,17 @@ double getPval(Marker marker, AttributeLine currentLine)
 }
 
 //Parses one line from attribute file by filling up and returning an AttributeLine, also initializes markerToSizeAndModel map using the labels
-AttributeLine parseNextLine(float winner, float second, ifstream& attributeFile, Marker& marker, map<string, LabelProps>& pnToLabelProps, string pnId)
+AttributeLine parseNextLine(float winner, float second, String<string> read, Marker& marker, map<string, LabelProps>& pnToLabelProps, string pnId)
 {
     AttributeLine currentLine;
     string temp;
-    attributeFile >> currentLine.numOfRepeats;
-    attributeFile >> currentLine.ratioBf;
-    attributeFile >> currentLine.ratioAf;
-    attributeFile >> currentLine.locationShift;
-    attributeFile >> currentLine.mateEditDist;
-    attributeFile >> currentLine.purity;
-    attributeFile >> currentLine.ratioOver20In;
-    attributeFile >> temp;
+    lexicalCast(currentLine.numOfRepeats, read[0]);
+    lexicalCast(currentLine.ratioBf, read[1]);
+    lexicalCast(currentLine.ratioAf, read[2]);
+    lexicalCast(currentLine.locationShift, read[3]);
+    lexicalCast(currentLine.mateEditDist, read[4]);
+    lexicalCast(currentLine.purity, read[5]);
+    lexicalCast(currentLine.ratioOver20In, read[6]);
     currentLine.pValue = getPval(marker, currentLine);
     markerToStats[marker].pnToPsum[pnId] += currentLine.pValue;
     if (currentLine.numOfRepeats == winner || currentLine.numOfRepeats == second)
@@ -507,14 +506,56 @@ long int readOffSets(ifstream & attsFile, unsigned firstPnIdx, unsigned nPns)
         return offset;
 }
 
+Pair<float> findMostFrequent(std::vector<String<string> > & currentReadList)
+{
+    std::set<string> presentAlleles;
+    std::vector<string> allAlleles;
+    int winnerFreq = 0, secondFreq = 0, currentFreq;
+    float winner, second, fallele;
+    for (auto read : currentReadList)
+    {
+        presentAlleles.insert(read[0]);
+        allAlleles.push_back(read[0]);
+    }
+    for (auto allele : presentAlleles)
+    {
+        currentFreq = count(allAlleles.begin(), allAlleles.end(), allele);
+        lexicalCast(fallele, allele);
+        if ( currentFreq > winnerFreq)
+        {
+            secondFreq = winnerFreq;
+            second = winner;
+            winnerFreq = currentFreq;
+            winner = fallele;
+        }
+        else
+        {
+            if (currentFreq > secondFreq)
+            {
+                secondFreq = currentFreq;
+                second = fallele;
+            }
+            else
+            {
+                if(currentFreq == secondFreq)
+                    second = max(second,fallele);
+            }
+        }
+    }
+    if (secondFreq < 0.10*winnerFreq)
+        second = winner;
+}
+
 void readMarkerData(CharString attributesDirectory, Marker marker, map<string, LabelProps>& pnToLabelProps, unsigned firstPnIdx)
 {
     //variables
-    int numberOfReads, pnsFound = 0;
+    int numberOfReads, nReadsThisBatch, pnsFound = 0;
     float winner, second, numOfRepeats;
-    string nextLine, temp;
+    string nextLine, temp, prevPn= "PeterGriffin";
     Pair<int, String<string> > numberOfWordsAndWords;
     AttributeLine currentLine;
+    std::vector<String<string> > currentReadList;
+    bool moreThanOneBam;
     //make input stream
     append(attributesDirectory, "/");
     append(attributesDirectory, to_string(marker.start));
@@ -523,6 +564,7 @@ void readMarkerData(CharString attributesDirectory, Marker marker, map<string, L
     //cout << "Reading data from " << attributesDirectory << endl;
     ifstream attsFile(toCString(attributesDirectory));
     long int offset = readOffSets(attsFile, firstPnIdx, firstPnIdx + pnToLabelProps.size() - 1);
+    //cout << "Read offset, it's:" << offset << endl;
     if (offset != 0)
         attsFile.seekg(offset);
     else
@@ -537,56 +579,110 @@ void readMarkerData(CharString attributesDirectory, Marker marker, map<string, L
         {
             //first check if we passed the last pn in our map
             if (nextLine > pnToLabelProps.rbegin()->first)
-                break;
-            if (pnToLabelProps.count(nextLine) != 0)
             {
-                ++pnsFound;
-                attsFile >> temp;
-                attsFile >> temp;
-                attsFile >> temp;
-                attsFile >> temp;
-                attsFile >> temp;
-                attsFile >> numberOfReads;
-                attsFile >> winner;
-                attsFile >> second;
-                //Just use markers where I have more than 10 reads
-                if (numberOfReads >= 10)
+                break;
+            }
+            //make sure we want to compute pnSlippage for this pn
+            if (pnToLabelProps.count(nextLine) != 0 )
+            {
+                //New PN -> process and store data from previous one if its a new PN and not the first one 
+                if (nextLine.compare(prevPn) != 0 && prevPn.compare("PeterGriffin") != 0)
                 {
-                    ++pnToLabelProps[nextLine].nMarkers;
-                    for (unsigned i = 0; i < numberOfReads; ++i)
+                    if (currentReadList.size() >= 10)
                     {
-                        currentLine = parseNextLine(winner, second, attsFile, marker, pnToLabelProps, nextLine);
-                        Pair<string,Marker> mapKey = Pair<string,Marker>(nextLine, marker);
-                        appendValue(markerAndPnToReads[mapKey],currentLine);
-                        markerToAllelesAndGenotypes[marker].i1.insert(currentLine.numOfRepeats);
+                        if (moreThanOneBam)
+                        {
+                            Pair<float> winnerSecond = findMostFrequent(currentReadList);
+                            winner = winnerSecond.i1;
+                            second = winnerSecond.i2;
+                        }
+                        ++pnToLabelProps[prevPn].nMarkers;
+                        //cout << "Processing " << currentReadList.size() << " reads for " << prevPn << " at " << marker.start << "inside of loop" << endl;
+                        for (auto read : currentReadList)
+                        {
+                            currentLine = parseNextLine(winner, second, read, marker, pnToLabelProps, prevPn);
+                            Pair<string,Marker> mapKey = Pair<string,Marker>(prevPn, marker);
+                            appendValue(markerAndPnToReads[mapKey],currentLine);
+                            markerToAllelesAndGenotypes[marker].i1.insert(currentLine.numOfRepeats);
+                        }
                     }
+                    else
+                        markerToStats[marker].pnToPsum[nextLine] = 0.0;
+                    currentReadList.clear();
+                    ++pnsFound;
+                    moreThanOneBam = false;
                 }
-                //Not enough reads
+                if (nextLine.compare(prevPn) == 0)
+                    moreThanOneBam = true;
+                prevPn = nextLine;
+                //read line with markerInfo
+                std::getline(attsFile, nextLine);
+                numberOfWordsAndWords = countNumberOfWords(nextLine);
+                lexicalCast(nReadsThisBatch, numberOfWordsAndWords.i2[5]);
+                if (moreThanOneBam)
+                    numberOfReads = numberOfReads + nReadsThisBatch;
                 else
+                    numberOfReads = nReadsThisBatch;
+                lexicalCast(winner, numberOfWordsAndWords.i2[6]);
+                lexicalCast(second, numberOfWordsAndWords.i2[7]);
+                //Read lines for read atts 
+                for (unsigned i = 0; i < nReadsThisBatch; ++i)
                 {
-                    markerToStats[marker].pnToPsum[nextLine] = 0.0;
-                    for (unsigned i = 0; i <= numberOfReads; ++i)
-                        getline (attsFile,nextLine);
+                    std::getline (attsFile, nextLine);
+                    numberOfWordsAndWords = countNumberOfWords(nextLine);
+                    if (nextLine.length() == 0)
+                    {
+                        --i;
+                        continue;
+                    }
+                    currentReadList.push_back(numberOfWordsAndWords.i2);
                 }
             }
            // Don't want this pn, walk on by
             else
             {
-                attsFile >> temp;
-                attsFile >> temp;
-                attsFile >> temp;
-                attsFile >> temp;
-                attsFile >> temp;
-                attsFile >> numberOfReads;
-                attsFile >> temp;
-                attsFile >> temp;
-                for (unsigned i = 0; i <= numberOfReads; ++i)
+                std::getline(attsFile, nextLine);
+                numberOfWordsAndWords = countNumberOfWords(nextLine);
+                lexicalCast(numberOfReads, numberOfWordsAndWords.i2[5]);
+                for (unsigned i = 0; i < numberOfReads; ++i)
+                {
                     getline (attsFile,nextLine);
+                    if (nextLine.length() == 0)
+                    {
+                        --i;
+                        continue;
+                    }
+                }
             }
         }
         else
-            cerr << "Something went sideways while reading attributes @: " << attributesDirectory << "\n";
+        {
+            cerr << "Something went sideways while reading attributes @: " << attributesDirectory << " for " << prevPn << "\n";
+            cout << nextLine << endl;
+        }
     }
+    //Process last pn after reading has finished
+    if (currentReadList.size() >= 10)
+    {
+        if (moreThanOneBam)
+        {
+            Pair<float> winnerSecond = findMostFrequent(currentReadList);
+            winner = winnerSecond.i1;
+            second = winnerSecond.i2;
+        }
+        ++pnToLabelProps[prevPn].nMarkers;
+        for (auto read : currentReadList)
+        {
+            //cout << read << endl;
+            currentLine = parseNextLine(winner, second, read, marker, pnToLabelProps, prevPn);
+            Pair<string,Marker> mapKey = Pair<string,Marker>(prevPn, marker);
+            appendValue(markerAndPnToReads[mapKey],currentLine);
+            markerToAllelesAndGenotypes[marker].i1.insert(currentLine.numOfRepeats);
+        }
+    }
+    else
+        markerToStats[marker].pnToPsum[nextLine] = 0.0;
+    currentReadList.clear();
     markerToAllelesAndGenotypes[marker].i2 = makeGenotypes(markerToAllelesAndGenotypes[marker].i1);
 }
 
@@ -634,11 +730,11 @@ int main(int argc, char const ** argv)
         while (changed > 0.005)
         {
             current_sp = estimateSlippage(current_sp, pn.first);
-            cout << "Estimated slippage." << endl;
+            //cout << "Estimated slippage." << endl;
             nChanged = updateGenotypes(current_sp, pn.first);
-            cout << "Updated genotypes." << endl;
+            //cout << "Updated genotypes." << endl;
             changed = (float)nChanged/(float)pn.second.nMarkers;
-            cout << nChanged << " " << pn.second.nMarkers << endl;
+            //cout << nChanged << " " << pn.second.nMarkers << endl;
         }
         cout << "Number of markers available for estimating pnSlippage for " << pn.first << " is: " << pn.second.nMarkers << endl;
         outputFile << pn.first << "\t" << current_sp << endl;
