@@ -73,6 +73,7 @@ struct GenotypeInfo {
     map<float, int> alleleToFreq; //This maps from reported alleles to their frequencies
     double pValueSum;
     double fullMotifSlippageSum;
+    bool hasManyAlleles;
 } ;
 
 //For storing command line arguments
@@ -99,14 +100,16 @@ map<Marker, Pair<LabelProps,double> > markerToLabelsAndSlipp;
 map<string, double> pnToSize;
 //Maps from pnId to reads and labels for one marker, is cleared for each marker
 map<string, String<Pair<float> > > pnToLabels;
-//Maps from pnIds to the sequencing methods
-map<string, string> pnToSeqMethod;
 //Map from marker to (average stepsize)%period
 map<Marker, double> markerToStepSum;
 //Map from marker to pValue sums of full motif slippage events adding and removing motifs (for estimating posNegSlipp parameter in genotyping formula)
 map<Marker, Pair<double> > markerToPosNegSums;
 //Map from marker to alleles that I have found more than 3 reads of with freq > 25% in a single PN
 map<Marker, std::set<float> > markerToTrueAlleles;
+//Map from marker to map from alleles to counts of occasions when they have been < 25 percent of the reads
+map<Marker, map<float, Pair<unsigned> > > markerToRareAlleles;
+//USE FOR FILTERING: Map from a marker to number of reads at marker, number of samples with reads at marker, number of reads at marker not supporting assigned genotype and number of samples with reads from more than 3 alleles.
+map<Marker, int[5]> markerToReadStats;
 //for debugging purposes
 bool useGeom = true;
 
@@ -188,73 +191,45 @@ void fillProblemX(int idx, AttributeLine & currentLine, problem& myProb)
 }
 
 //Parses one line from attribute file by filling up and returning an AttributeLine, also initializes markerToLabelsAndSlipp map using the labels
-AttributeLine parseNextLine(float winner, float second, bool is_gz, ifstream& attributeFile, io::filtering_istream& attributeFile_gz, Marker& marker, string PnId, map<Pair<string,Marker>, GenotypeInfo>& PnAndMarkerToGenotype, String<string> & firstLine, bool useFirstLine, bool enoughReads)
+AttributeLine parseNextLine(String<string> & read, Pair<float> winnerSecond, bool enoughReads, Marker& marker, string PnId, map<Pair<string,Marker>, GenotypeInfo>& PnAndMarkerToGenotype)
 {
-    PnAndMarkerToGenotype[Pair<string,Marker>(PnId, marker)].genotype = Pair<float>(winner,second);
+    PnAndMarkerToGenotype[Pair<string,Marker>(PnId, marker)].genotype = winnerSecond;
     AttributeLine currentLine;
     currentLine.PnId = PnId;
-    string tmp;
-    if (useFirstLine)
-    {
-        lexicalCast(currentLine.numOfRepeats, firstLine[0]);
-		lexicalCast(currentLine.ratioBf,firstLine[1]);
-		lexicalCast(currentLine.ratioAf,firstLine[2]);
-		lexicalCast(currentLine.locationShift,firstLine[3]);
-		lexicalCast(currentLine.mateEditDist,firstLine[4]);
-		lexicalCast(currentLine.purity,firstLine[5]);
-		lexicalCast(currentLine.ratioOver20In,firstLine[6]);
-    }
-    else
-    {
-        if (is_gz)
-        {
-            attributeFile_gz >> currentLine.numOfRepeats;
-            attributeFile_gz >> currentLine.ratioBf;
-            attributeFile_gz >> currentLine.ratioAf;
-            attributeFile_gz >> currentLine.locationShift;
-            attributeFile_gz >> currentLine.mateEditDist;
-            attributeFile_gz >> currentLine.purity;
-            attributeFile_gz >> currentLine.ratioOver20In;
-            attributeFile_gz >> tmp; //repeatSeqFromRead
-        }
-        else
-        {
-            attributeFile >> currentLine.numOfRepeats;
-            attributeFile >> currentLine.ratioBf;
-            attributeFile >> currentLine.ratioAf;
-            attributeFile >> currentLine.locationShift;
-            attributeFile >> currentLine.mateEditDist;
-            attributeFile >> currentLine.purity;
-            attributeFile >> currentLine.ratioOver20In;
-            attributeFile >> tmp; //repeatSeqFromRead
-        }
-    }
+    lexicalCast(currentLine.numOfRepeats, read[0]);
+    lexicalCast(currentLine.ratioBf, read[1]);
+    lexicalCast(currentLine.ratioAf, read[2]);
+    lexicalCast(currentLine.locationShift, read[3]);
+    lexicalCast(currentLine.mateEditDist, read[4]);
+    lexicalCast(currentLine.purity, read[5]);
+    lexicalCast(currentLine.ratioOver20In, read[6]);
+    ++PnAndMarkerToGenotype[Pair<string,Marker>(PnId, marker)].alleleToFreq[currentLine.numOfRepeats];
     currentLine.pValue = 0.95;
     if (enoughReads)
         PnAndMarkerToGenotype[Pair<string,Marker>(PnId, marker)].pValueSum += currentLine.pValue;
     //Check if the read is a result of a full motif slippage
-    float diff1 = fabs(winner-currentLine.numOfRepeats), diff2 = fabs(second-currentLine.numOfRepeats);
+    float diff1 = fabs(winnerSecond.i1-currentLine.numOfRepeats), diff2 = fabs(winnerSecond.i2-currentLine.numOfRepeats);
     if (std::min(diff1,diff2)>=0.9)
     {
         PnAndMarkerToGenotype[Pair<string,Marker>(PnId, marker)].fullMotifSlippageSum += currentLine.pValue;
         //Check whether slippage removed or added repeat
         if (diff1 < diff2)
         {
-            if (winner > currentLine.numOfRepeats)
+            if (winnerSecond.i1 > currentLine.numOfRepeats)
                 markerToPosNegSums[marker].i2 += currentLine.pValue;
             else
                 markerToPosNegSums[marker].i1 += currentLine.pValue;
         }
         else
         {
-            if (second > currentLine.numOfRepeats)
+            if (winnerSecond.i2 > currentLine.numOfRepeats)
                 markerToPosNegSums[marker].i2 += currentLine.pValue;
             else
                 markerToPosNegSums[marker].i1 += currentLine.pValue;
         }
     }
     //Determining the initial label of the read
-    if ((fabs(currentLine.numOfRepeats - winner) <= 0.05) || (fabs(currentLine.numOfRepeats - second) <= 0.05))
+    if ((fabs(currentLine.numOfRepeats - winnerSecond.i1) <= 0.05) || (fabs(currentLine.numOfRepeats - winnerSecond.i2) <= 0.05))
     {
         currentLine.label = 1;
         ++markerToLabelsAndSlipp[marker].i1.p1.i1;
@@ -263,7 +238,7 @@ AttributeLine parseNextLine(float winner, float second, bool is_gz, ifstream& at
     }
     else
     {
-        if ((fabs(currentLine.numOfRepeats - (winner - 1)) <= 0.05) || (fabs(currentLine.numOfRepeats - (second - 1)) <= 0.05))
+        if ((fabs(currentLine.numOfRepeats - (winnerSecond.i1 - 1)) <= 0.05) || (fabs(currentLine.numOfRepeats - (winnerSecond.i2 - 1)) <= 0.05))
         {
             currentLine.label = 2;
             ++markerToLabelsAndSlipp[marker].i1.p2.i1;
@@ -278,8 +253,8 @@ AttributeLine parseNextLine(float winner, float second, bool is_gz, ifstream& at
             if (enoughReads)
                 markerToLabelsAndSlipp[marker].i1.p3.i2 += currentLine.pValue;
             float diff1, diff2;
-            diff1 = fabs(currentLine.numOfRepeats - winner);
-            diff2 = fabs(currentLine.numOfRepeats - second);
+            diff1 = fabs(currentLine.numOfRepeats - winnerSecond.i1);
+            diff2 = fabs(currentLine.numOfRepeats - winnerSecond.i2);
             if (fmod(diff1,1.0)<0.05)
             {
                 if (fmod(diff2,1.0)<0.05)
@@ -378,7 +353,7 @@ float dpois(int step, float mean) {
   return p;
 }
 
-Pair<GenotypeInfo, Pair<bool> > determineGenotype(String<AttributeLine>& reads, double markerSlippage, String<Pair<float> > & genotypes, int numberOfAlleles, int motifLength, double psucc, double posSlippProb, double negSlippProb, Marker& thisMarker)
+Pair<GenotypeInfo, bool> determineGenotype(String<AttributeLine>& reads, double markerSlippage, String<Pair<float> > & genotypes, int numberOfAlleles, int motifLength, double psucc, double posSlippProb, double negSlippProb, Marker& thisMarker)
 {
     GenotypeInfo returnValue;
     returnValue.pValueSum = 0;
@@ -391,9 +366,9 @@ Pair<GenotypeInfo, Pair<bool> > determineGenotype(String<AttributeLine>& reads, 
     String<long double> probs;
     double lengthSlippage;
     resize(probs, length(genotypes));
-    bool isHomo, enoughDistance = true;
+    bool isHomo;
     float posNegSlipp = 1, posNegSlipp2 = 1, lambda = std::max((double)0.001,markerSlippage), diff, diff2;
-    int indexOfWinner, indexOfSecond;
+    int indexOfWinner;
     for (unsigned i=0; i<length(genotypes); ++i)
     {
         probs[i] = 0;
@@ -406,7 +381,6 @@ Pair<GenotypeInfo, Pair<bool> > determineGenotype(String<AttributeLine>& reads, 
             readToCheck = reads[j];
             if (i == 0)
             {
-                ++returnValue.alleleToFreq[readToCheck.numOfRepeats];
                 if (length(reads) >= 10)
                     returnValue.pValueSum += readToCheck.pValue;
             }
@@ -449,13 +423,6 @@ Pair<GenotypeInfo, Pair<bool> > determineGenotype(String<AttributeLine>& reads, 
     }
     returnValue.pValues = probs;
     indexOfWinner = findMinIndex(probs);
-    if (length(probs)>1)
-    {
-        String<long double> probsCopy = probs;
-        erase(probsCopy,indexOfWinner);
-        indexOfSecond = findMinIndex(probsCopy);
-        enoughDistance = round(probsCopy[indexOfSecond]-probs[indexOfWinner]) > 10;
-    }
     returnValue.genotype = genotypes[indexOfWinner];
     returnValue.pValue = probs[indexOfWinner];
     newGenotypeSet.insert(returnValue.genotype.i1);
@@ -484,9 +451,9 @@ Pair<GenotypeInfo, Pair<bool> > determineGenotype(String<AttributeLine>& reads, 
         }
     }
     if (newGenotypeSet == currentGenotype)
-        return Pair<GenotypeInfo, Pair<bool> >(returnValue, Pair<bool>(false,enoughDistance));
+        return Pair<GenotypeInfo, bool>(returnValue, false);
     else
-        return Pair<GenotypeInfo, Pair<bool> >(returnValue, Pair<bool>(true,enoughDistance));
+        return Pair<GenotypeInfo, bool>(returnValue, true);
 }
 
 void relabelReads(String<AttributeLine>& readsToRelabel, int start, int end, Pair<float> newGenotype, Marker & marker)
@@ -622,9 +589,15 @@ void makeVcfHeader(VcfFileOut& out, String<string> & PnIds, string chrom, string
     appendValue(header, VcfHeaderRecord("contig", contigString));
     appendValue(header, VcfHeaderRecord("INFO", "<ID=RefLen,Number=A,Type=Integer,Description=\"Length of the reference allele\">"));
     appendValue(header, VcfHeaderRecord("INFO", "<ID=Motif,Number=1,Type=String,Description=\"Microsatellite repeat motif\">"));
+    appendValue(header, VcfHeaderRecord("INFO", "<ID=nReads,Number=A,Type=Integer,Description=\"Total number of reads\">"));
+    appendValue(header, VcfHeaderRecord("INFO", "<ID=nNonSupportReads,Number=A,Type=Integer,Description=\"Number of reads not supporting genotype\">"));
+    appendValue(header, VcfHeaderRecord("INFO", "<ID=nPnsWithReads,Number=A,Type=Integer,Description=\"Number of samples with available reads\">"));
+    appendValue(header, VcfHeaderRecord("INFO", "<ID=nMoreThan2alleles,Number=A,Type=Integer,Description=\"Number of samples with reads supporting more then two alleles\">"));
+    appendValue(header, VcfHeaderRecord("FILTER", "<ID=gqDepth, Description=\"Marker has an allele occurring at a < 25% per individual frequency in more than 30% of samples\">"));
     appendValue(header, VcfHeaderRecord("FORMAT", "<ID=GT,Number=1,Type=String,Description=\"Genotype\">"));
     appendValue(header, VcfHeaderRecord("FORMAT", "<ID=AD,Number=R,Type=Integer,Description=\"Allelic depths for the ref and alt alleles in the order listed\">"));
     appendValue(header, VcfHeaderRecord("FORMAT", "<ID=DP,Number=1,Type=Integer,Description=\"Approximate read depth\">"));
+    appendValue(header, VcfHeaderRecord("FORMAT", "<ID=GQ,Number=1,Type=Integer,Description=\"Genotype Quality\">"));
     appendValue(header, VcfHeaderRecord("FORMAT", "<ID=PL,Number=G,Type=Integer,Description=\"PHRED-scaled genotype likelihoods\">"));
     writeHeader(out, header);
 }
@@ -655,9 +628,10 @@ Pair<int> findGenotypeIndices(GenotypeInfo& genotype, std::set<float>& allelesAt
     return gtIdxs;
 }
 
-VcfRecord fillRecordMarker(Marker & marker, std::set<float> allelesAtThisMarker)
+VcfRecord fillRecordMarker(Marker & marker, std::set<float> allelesAtThisMarker, map<Pair<int, string>, Triple<double, double, string> > & markerToSlippStuttAndRefSeq)
 {
     int refLength = marker.end - (marker.start-1);
+    bool hasRareAllele = false;
     VcfRecord record;
     record.rID = 0;
     record.beginPos = marker.start-1;
@@ -665,56 +639,73 @@ VcfRecord fillRecordMarker(Marker & marker, std::set<float> allelesAtThisMarker)
     ss << record.beginPos+1;
     CharString str = ss.str();
     record.id = marker.chrom + ":" + toCString(str) + ":M";
-    //Get ref seq using crop_fasta and set as record.ref
-    string refSeq;
-    FILE * stream;
-    char buffer[256];
-    stringstream cmdStream;
-    cmdStream << "/odinn/users/snaedisk/bin/crop_fasta /odinn/data/reference/Homo_sapiens-deCODE-hg38/Sequence/WholeGenomeFasta/genome.fa " << marker.chrom << ":" << toCString(str) << "-" << marker.end;
-    string cmd = cmdStream.str();
-    cmd.append(" 2>&1");
-    stream = popen(cmd.c_str(), "r");
-    if (stream) {
-        while (!feof(stream))
-        if (fgets(buffer, 256, stream) != NULL)
-        {
-            buffer[strcspn(buffer, "\n")] = 0;
-            refSeq.append(buffer);
-        }
-        pclose(stream);
-    }
-    //Set reference allele and delete it from allele set
-    stringClear(ss,str);
-    record.ref = refSeq;
+    Pair<int, string> sAndM = Pair<int, string>(marker.start, marker.motif);
+    record.ref = markerToSlippStuttAndRefSeq[sAndM].i3;
     allelesAtThisMarker.erase(marker.refRepeatNum);
     record.qual = record.MISSING_QUAL();
     record.info = "RefLen=";
+    stringClear(ss,str);
     ss << refLength;
 	str = ss.str();
 	append(record.info,str);
 	stringClear(ss,str);
-    append(record.info,";");
-    append(record.info,"Motif=");
+    append(record.info,";Motif=");
     append(record.info,marker.motif);
-    record.format = "GT:AD:DP:PL";
+    record.format = "GT:AD:DP:GQ:PL";
     //Loop over all alternative alleles and add them to ALT field in record
     float currentAllele;
-    std::set<float>::iterator allEnd = allelesAtThisMarker.end();
-    for (std::set<float>::iterator allIt = allelesAtThisMarker.begin(); allIt!=allEnd; ++allIt)
+    for (auto allele : allelesAtThisMarker)
     {
         append(record.alt, "<");
-        currentAllele = *allIt;
+        currentAllele = allele;
         ss << currentAllele;
         str = ss.str();
         append(record.alt, str);
         append(record.alt, ">,");
         stringClear(ss,str);
+        //Check if there is a rare allele at this marker (<25% of reads in 30% of the samples containing it.)
+        //cout << currentAllele << "\t" << markerToRareAlleles[marker][currentAllele].i1 << "/(" << markerToRareAlleles[marker][currentAllele].i2 << " + " << markerToRareAlleles[marker][currentAllele].i1 << ")\n";
+        if ((double)markerToRareAlleles[marker][currentAllele].i1/(double)(markerToRareAlleles[marker][currentAllele].i2 + markerToRareAlleles[marker][currentAllele].i1) > 0.3)
+            hasRareAllele = true;
     }
+    //Have to check if ref allele is low freq in all PNS it's in as well 
+    if ((double)markerToRareAlleles[marker][marker.refRepeatNum].i1/(double)(markerToRareAlleles[marker][marker.refRepeatNum].i2 + markerToRareAlleles[marker][marker.refRepeatNum].i1) > 0.3)
+        hasRareAllele = true;
+    if (hasRareAllele)
+        record.filter = "gqDepth";
+    else
+        record.filter = ".";
+
     if (allelesAtThisMarker.size() > 0)
         eraseBack(record.alt);
     else
         record.alt = ".";
     return record;
+}
+
+void fillRecordReadStats(VcfRecord& record, Marker& marker)
+{
+    stringstream ss;
+    append(record.info,";nReads=");
+    ss << markerToReadStats[marker][0];
+    CharString str = ss.str();
+    append(record.info,str);
+    stringClear(ss,str);
+    append(record.info,";nNonSupportReads=");
+    ss << markerToReadStats[marker][3];
+    str = ss.str();
+    append(record.info,str);
+    stringClear(ss,str);
+    append(record.info,";nPnsWithReads=");
+    ss << markerToReadStats[marker][1];
+    str = ss.str();
+    append(record.info,str);
+    stringClear(ss,str);
+    append(record.info,";nMoreThan2alleles=");
+    ss << markerToReadStats[marker][2];
+    str = ss.str();
+    append(record.info,str);
+    stringClear(ss,str);
 }
 
 //Fill up the PN-specific fields in the VCF-record.
@@ -734,8 +725,7 @@ void fillRecordPn(GenotypeInfo genotype, VcfRecord& record, MakeGenotypesRet gen
     //Remove ref allele from set.
     allelesAtMarker.erase(refAllele);
     stringstream ss;
-    CharString str = ss.str();
-    CharString gtInfo; //First I make the string containing the genotype info
+    CharString str, gtInfo, PLscores;
     Pair<int> gtIdxs = findGenotypeIndices(genotype, allelesAtMarker);
     //ss << genotype.genotype.i1;
     ss << gtIdxs.i1;
@@ -793,10 +783,8 @@ void fillRecordPn(GenotypeInfo genotype, VcfRecord& record, MakeGenotypesRet gen
     append(gtInfo,":");
     Pair<float> genotypeToLookFor;
     Pair<float> genotypeToCompare;
-    int index;
-    long double numerator;
-    long double denominator;
-    int pl;
+    int index, pl, gq=255;
+    long double numerator, denominator;
     for (unsigned i=0; i<length(genotypesAtThisMarker.genotypes); ++i)
     {
         index = -1;
@@ -805,7 +793,7 @@ void fillRecordPn(GenotypeInfo genotype, VcfRecord& record, MakeGenotypesRet gen
         {
             ss << 0;
             str = ss.str();
-            append(gtInfo,str);
+            append(PLscores,str);
         }
         else
         {
@@ -822,7 +810,7 @@ void fillRecordPn(GenotypeInfo genotype, VcfRecord& record, MakeGenotypesRet gen
             {
                 ss << 255;
                 str = ss.str();
-                append(gtInfo,str);
+                append(PLscores,str);
             }
             else
             {
@@ -834,13 +822,21 @@ void fillRecordPn(GenotypeInfo genotype, VcfRecord& record, MakeGenotypesRet gen
                     pl = 255;
                 ss << pl;
                 str = ss.str();
-                append(gtInfo,str);
+                append(PLscores,str);
+                if (pl < gq)
+                    gq = pl;
             }
         }
         stringClear(ss,str);
-        append(gtInfo,",");
+        append(PLscores,",");
     }
-    eraseBack(gtInfo);
+    eraseBack(PLscores);
+    ss << gq;
+    str = ss.str();
+    append(gtInfo,str);
+    stringClear(ss,str);
+    append(gtInfo,":");
+    append(gtInfo,PLscores);
     //When the genotype info string is ready I append it to the stringset of charstrings
     appendValue(record.genotypeInfos, gtInfo);
 }
@@ -926,7 +922,7 @@ void readPnSlippage(CharString & pnSlippageFile, String<string> & PnIds)
     pnSlippageStream.close();
 }
 
-void readMarkers(CharString & markerFile, map<Pair<int, string>, Pair<double> > & markerToSlippAndStutt)
+void readMarkers(CharString & markerFile, map<Pair<int, string>, Triple<double, double, string> > & markerToSlippStuttAndRefSeq)
 {
     ifstream markerStream(toCString(markerFile));
     if(markerStream.fail())
@@ -939,13 +935,13 @@ void readMarkers(CharString & markerFile, map<Pair<int, string>, Pair<double> > 
     {
         istringstream iss(line);
 
-        string col1, motif;
+        string col1, motif, refSeq;
         int startPos, col3;
         double slipp, stutt;
 
-        iss >> col1 >> startPos >> col3 >> motif >> slipp >> stutt;
+        iss >> col1 >> startPos >> col3 >> motif >> refSeq >> slipp >> stutt;
         Pair<int, string> currPair = Pair<int, string>(startPos, motif);
-        markerToSlippAndStutt[currPair] = Pair<double>(slipp, stutt);
+        markerToSlippStuttAndRefSeq[currPair] = Triple<double, double, string>(slipp, stutt, refSeq);
     }
     markerStream.close();
     return;
@@ -1012,14 +1008,22 @@ Pair<double, int> estimateSlippage(String<string> & PnIds, map<Pair<string,Marke
     return Pair<double, int>(result, nAvailable);
 }
 
-Pair<bool> genotypeIsConfident(GenotypeInfo& genotypeInfo)
+Triple<bool> genotypeIsConfident(GenotypeInfo& genotypeInfo)
 {
-    bool A1ok=false, A2ok=false;
+    bool A1ok = false, A2ok = false, manyAlleles = false;
     if (genotypeInfo.alleleToFreq[genotypeInfo.genotype.i1]>=3 && (double)genotypeInfo.alleleToFreq[genotypeInfo.genotype.i1]/(double)genotypeInfo.numOfReads >=0.25)
         A1ok = true;
     if (genotypeInfo.alleleToFreq[genotypeInfo.genotype.i2]>=3 && (double)genotypeInfo.alleleToFreq[genotypeInfo.genotype.i2]/(double)genotypeInfo.numOfReads >=0.25)
         A2ok = true;
-    return Pair<bool>(A1ok, A2ok);
+    unsigned nHighSupportAlleles = 0;
+    for (auto& allele : genotypeInfo.alleleToFreq)
+    {
+        if ((double)allele.second/(double)genotypeInfo.numOfReads >= 0.25)
+            ++nHighSupportAlleles;
+    }
+    if (nHighSupportAlleles > 2)
+        manyAlleles = true;
+    return Triple<bool>(A1ok, A2ok, manyAlleles);
 }
 
 long int readOffSets(ifstream & attsFile, unsigned firstPnIdx)
@@ -1034,6 +1038,46 @@ long int readOffSets(ifstream & attsFile, unsigned firstPnIdx)
     while (offset == 0)
         attsFile >> offset;
     return offset;
+}
+
+Pair<float> findMostFrequent(std::vector<String<string> > & currentReadList)
+{
+    std::set<string> presentAlleles;
+    std::vector<string> allAlleles;
+    int winnerFreq = 0, secondFreq = 0, currentFreq;
+    float winner, second, fallele;
+    for (auto read : currentReadList)
+    {
+        presentAlleles.insert(read[0]);
+        allAlleles.push_back(read[0]);
+    }
+    for (auto allele : presentAlleles)
+    {
+        currentFreq = count(allAlleles.begin(), allAlleles.end(), allele);
+        lexicalCast(fallele, allele);
+        if ( currentFreq > winnerFreq)
+        {
+            secondFreq = winnerFreq;
+            second = winner;
+            winnerFreq = currentFreq;
+            winner = fallele;
+        }
+        else
+        {
+            if (currentFreq > secondFreq)
+            {
+                secondFreq = currentFreq;
+                second = fallele;
+            }
+            else
+            {
+                if(currentFreq == secondFreq)
+                    second = max(second,fallele);
+            }
+        }
+    }
+    if (secondFreq < 0.10*winnerFreq)
+        second = winner;
 }
 
 int main(int argc, char const ** argv)
@@ -1055,7 +1099,6 @@ int main(int argc, char const ** argv)
     std::set<Marker> markers;
     int start, end, numberOfReads;
     float refRepeatNum, winner, second;
-    bool enoughReads = true;
     //Read the slippage rate for all PNs into the pnToSize map and list of markers to genotype.
     readPnSlippage(options.pnSlippageFile, PnIds);
     if (length(PnIds) == 0)
@@ -1064,15 +1107,14 @@ int main(int argc, char const ** argv)
         return 1;
     }
     cout << "Number of PNs: " << length(PnIds) << "\n";
-    bool enoughForEstimation = length(PnIds) >= 20;
-    map<Pair<int, string>, Pair<double> > markerToSlippAndStutt;
-    readMarkers(options.markerList, markerToSlippAndStutt);
-    if (markerToSlippAndStutt.size() == 0)
+    map<Pair<int, string>, Triple<double, double, string> > markerToSlippStuttAndRefSeq;
+    readMarkers(options.markerList, markerToSlippStuttAndRefSeq);
+    if (markerToSlippStuttAndRefSeq.size() == 0)
     {
         cerr << "Failed to read any markers to genotype." << endl;
         return 1;
     }
-    cout << "Number of markers: " << markerToSlippAndStutt.size() << "\n";
+    cout << "Number of markers: " << markerToSlippStuttAndRefSeq.size() << "\n";
     //Map from marker to all reads covering it
     map<Marker, String<AttributeLine> > mapPerMarker;
     //Count the total number of alleles in the population for each marker -- by checking the size of the set
@@ -1093,14 +1135,16 @@ int main(int argc, char const ** argv)
 
     Marker marker;
     string nextLine;
+    std::vector<String<string> > currentReadList;
     AttributeLine currentLine;
     Pair<int, String<string> > numberOfWordsAndWords;
-
+    bool moreThanOneBam = false, enoughReads = true;
     //Iterate over all markers in the markerList and read from their attribute files
-    int nProcessedMarkers = 0;
-    for (auto const & listMarker : markerToSlippAndStutt)
+    unsigned nProcessedMarkers = 0, processedPns, nReadsThisBatch;
+    for (auto const & listMarker : markerToSlippStuttAndRefSeq)
     {
         //Make path to attributefile for current marker
+        PnId = "first";
         append(attributePath, to_string(listMarker.first.i1));
         append(attributePath, "_");
         append(attributePath, listMarker.first.i2);
@@ -1127,14 +1171,60 @@ int main(int argc, char const ** argv)
                 continue;
         }
         ++nProcessedMarkers;
+        processedPns=0;
         while (is_gz ? std::getline (attributeFile_gz, nextLine) : std::getline (attributeFile, nextLine))
         {
-            if (nextLine.length() == 0)
+            if (nextLine.length()==0)
                 continue;
             numberOfWordsAndWords = countNumberOfWords(nextLine);
+            //Reads from new bamFile
             if (numberOfWordsAndWords.i1 == 1)
             {
+                //This is not the first PN and not the same as the one before
+                if (processedPns > 0 && nextLine.compare(PnId) != 0)
+                {
+                    //Update markerToRareAlleles map
+                    for (auto const & allele : PnAndMarkerToGenotype[Pair<string,Marker>(PnId, marker)].alleleToFreq)
+                    {
+                        if ((double)allele.second/(double)numberOfReads < 0.25)
+                            ++markerToRareAlleles[marker][allele.first].i1;
+                        ++markerToRareAlleles[marker][allele.first].i2;
+                    }
+                    //Update count of PNs at marker with reads reporting more than 2 alleles
+                    if (PnAndMarkerToGenotype[Pair<string,Marker>(PnId, marker)].alleleToFreq.size() > 2)
+                        ++markerToReadStats[marker][2];
+                    //Update read counts at marker
+                    markerToReadStats[marker][0] += numberOfReads;
+                    ++markerToReadStats[marker][1];
+                    //Find most frequent genotypes if more than one BAM file from sample
+                    Pair<float> winnerSecond;
+                    if (moreThanOneBam)
+                        winnerSecond = findMostFrequent(currentReadList);
+                    else
+                        winnerSecond = Pair<float>(winner, second);
+                    markerToAlleles[marker].insert(winner);
+                    markerToAlleles[marker].insert(second);
+                    //Check if I have enough reads
+                    if (numberOfReads < 10)
+                    {
+                        PnAndMarkerToGenotype[Pair<string,Marker>(PnId, marker)].pValueSum = 0;
+                        enoughReads = false;
+                    }
+                    //Parse all reads collected and add to map
+                    cout << "Parsing " << length(currentReadList) << " for " << PnId << endl;
+                    for (auto read : currentReadList)
+                    {
+                        currentLine = parseNextLine(read, winnerSecond, enoughReads, marker, PnId, PnAndMarkerToGenotype);
+                        appendValue(mapPerMarker[marker],currentLine);
+                    }
+                    currentReadList.clear();
+                    enoughReads = true;
+                    moreThanOneBam = false;
+                }
+                if (nextLine.compare(PnId) == 0)
+                    moreThanOneBam = true;    
                 PnId = nextLine;
+                ++processedPns;
             }
             if (numberOfWordsAndWords.i1 == 8)
             {
@@ -1145,34 +1235,72 @@ int main(int argc, char const ** argv)
                     lexicalCast(marker.end,numberOfWordsAndWords.i2[2]);
                     marker.motif = numberOfWordsAndWords.i2[3];
                     lexicalCast(marker.refRepeatNum,numberOfWordsAndWords.i2[4]);
-                    lexicalCast(numberOfReads,numberOfWordsAndWords.i2[5]);
+                    lexicalCast(nReadsThisBatch,numberOfWordsAndWords.i2[5]);
+                    if (moreThanOneBam)
+                        numberOfReads = numberOfReads + nReadsThisBatch;
+                    else
+                        numberOfReads = nReadsThisBatch;
                     markers.insert(marker);
                     lexicalCast(winner,numberOfWordsAndWords.i2[6]);
                     lexicalCast(second,numberOfWordsAndWords.i2[7]);
-                    markerToAlleles[marker].insert(winner);
-                    markerToAlleles[marker].insert(second);
                 }
                 else
                 {
-                    if (numberOfReads < 10)
+                    currentReadList.push_back(numberOfWordsAndWords.i2);
+                    for (unsigned i = 1; i < nReadsThisBatch; ++i)
                     {
-                        PnAndMarkerToGenotype[Pair<string,Marker>(PnId, marker)].pValueSum = 0;
-                        enoughReads = false;
+                        std::getline (attributeFile, nextLine);
+                        numberOfWordsAndWords = countNumberOfWords(nextLine);
+                        currentReadList.push_back(numberOfWordsAndWords.i2);
                     }
-                    for (unsigned i = 0; i < numberOfReads; ++i)
-                    {
-                        if (i == 0)
-                            currentLine = parseNextLine(winner, second, is_gz, attributeFile, attributeFile_gz, marker, PnId, PnAndMarkerToGenotype, numberOfWordsAndWords.i2, true, enoughReads);
-                        else
-                            currentLine = parseNextLine(winner, second, is_gz, attributeFile, attributeFile_gz, marker, PnId, PnAndMarkerToGenotype, numberOfWordsAndWords.i2, false, enoughReads);
-                        appendValue(mapPerMarker[marker],currentLine);
-                    }
-                    enoughReads = true;
                 }
             }
             if (numberOfWordsAndWords.i1 != 1 && numberOfWordsAndWords.i1 != 8)
                 cerr << "Format error in attribute file!" << endl;
         }
+        //Be careful to process last PN
+        for (auto const & allele : PnAndMarkerToGenotype[Pair<string,Marker>(PnId, marker)].alleleToFreq)
+        {
+            if ((double)allele.second/(double)numberOfReads < 0.25)
+                ++markerToRareAlleles[marker][allele.first].i1;
+            ++markerToRareAlleles[marker][allele.first].i2;
+        }
+        //Update count of PNs at marker with reads reporting more than 2 alleles
+        if (PnAndMarkerToGenotype[Pair<string,Marker>(PnId, marker)].alleleToFreq.size() > 2)
+            ++markerToReadStats[marker][2];
+        //Update read counts at marker
+        markerToReadStats[marker][0] += numberOfReads;
+        ++markerToReadStats[marker][1];
+        //Find most frequent genotypes if more than one BAM file from sample
+        Pair<float> winnerSecond;
+        if (moreThanOneBam)
+            winnerSecond = findMostFrequent(currentReadList);
+        else
+            winnerSecond = Pair<float>(winner, second);
+        markerToAlleles[marker].insert(winner);
+        markerToAlleles[marker].insert(second);
+        //Check if I have enough reads
+        if (numberOfReads < 10)
+        {
+            PnAndMarkerToGenotype[Pair<string,Marker>(PnId, marker)].pValueSum = 0;
+            enoughReads = false;
+        }
+        //Parse all reads collected and add to map
+        cout << "Parsing " << length(currentReadList) << " for " << PnId << endl;
+        for (auto read : currentReadList)
+        {
+            currentLine = parseNextLine(read, winnerSecond, enoughReads, marker, PnId, PnAndMarkerToGenotype);
+            appendValue(mapPerMarker[marker],currentLine);
+        }
+        currentReadList.clear();
+        enoughReads = true;
+        moreThanOneBam = false;
+        /*cout << marker.chrom << ":" << marker.start << " " << marker.motif << "\n";
+        for (auto const & pair : markerToRareAlleles[marker])
+        {
+            if ((double)pair.second.i1/(double)(pair.second.i1 + pair.second.i2) > 0.3)
+                cout << pair.first << "\t" << pair.second.i1 << "\t" << pair.second.i2 << "\t" << (double)pair.second.i1/(double)(pair.second.i1 + pair.second.i2) << "\n";
+        }*/
         attributePath = options.attDirChromNum;
     }
     chrom = marker.chrom;
@@ -1215,8 +1343,6 @@ int main(int argc, char const ** argv)
     std::set<float> allelesToConsider;
     String<Pair<float> > genotypesToConsider;
     float currAllele;
-    //Map to store a map from alleles to their frequencies in the population for each marker, used for estimating the probability that the distance between alleles at the marker is an integer and number of PNs at each marker.
-    map<Marker, Pair<map<float,int>,int> > markerToAlleleFreqs;
     int z = 1, nAvailable;
 
     //Stuff for vcf file
@@ -1239,6 +1365,9 @@ int main(int argc, char const ** argv)
         changedRatio=1;
         PnsAtMarker = 1;
         int loops = 0;
+        bool enoughForEstimation = false;
+        if (markerToReadStats[thisMarker][1] >= 30)
+            enoughForEstimation = true;
         String<AttributeLine>& currentMarker = it->second;
         unsigned nReadsAtMarker = length(currentMarker);
         probBig.l = nReadsAtMarker;
@@ -1255,9 +1384,9 @@ int main(int argc, char const ** argv)
             else
             {
                 sAndM = Pair<int, string>(thisMarker.start, thisMarker.motif);
-                geomP = markerToSlippAndStutt[sAndM].i2;
+                geomP = markerToSlippStuttAndRefSeq[sAndM].i2;
             }
-            //Have to make sure geometric parameter is < 1, otherwise no slippage is allowed
+            //Have to make sure geometric parameter is < 1, otherwise no stutter is allowed
             geomP = fmin(geomP, 0.999);
             if (markerToPosNegSums[thisMarker].i1 + markerToPosNegSums[thisMarker].i2 > 0 && enoughForEstimation)
             {
@@ -1270,13 +1399,11 @@ int main(int argc, char const ** argv)
             }
             else
                 posSlippProb = negSlippProb = 0.5;
-            //cout << "posSlippProb: " << posSlippProb << " negSlippProb: " << negSlippProb << endl;
             allelesAtMarker = markerToAlleles[thisMarker];
             //Insert reference allele just in case no one has it
             allelesAtMarker.insert(thisMarker.refRepeatNum);
             numOfAlleles = allelesAtMarker.size();
             markerToAlleles[thisMarker].clear();
-            markerToAlleleFreqs[thisMarker].i1.clear();
             //Estimate marker slippage and update in markerToLabelsAndSlipp map
             if (enoughForEstimation)
             {
@@ -1286,7 +1413,7 @@ int main(int argc, char const ** argv)
             }
             else
             {
-                markerToLabelsAndSlipp[thisMarker].i2 = markerToSlippAndStutt[sAndM].i1;
+                markerToLabelsAndSlipp[thisMarker].i2 = markerToSlippStuttAndRefSeq[sAndM].i1;
                 //cout << markerToLabelsAndSlipp[thisMarker].i2 << endl;
                 nAvailable = length(PnIds);
             }
@@ -1342,7 +1469,7 @@ int main(int argc, char const ** argv)
                 model_ = load_model(model_in_file);
             }
             prob_estimates = (double *) malloc(2*sizeof(double));
-            Pair<GenotypeInfo, Pair<bool> > changed;
+            Pair<GenotypeInfo, bool> changed;
             PnId = currentMarker[0].PnId;
             String<AttributeLine> reads;
             //Have to add ref allele to true allele set in case no one has it.
@@ -1363,19 +1490,19 @@ int main(int argc, char const ** argv)
                     genotypesToConsider = makeGenotypes(allelesToConsider, thisMarker.refRepeatNum).genotypes;
                     //make decision about genotype for PnId at the current marker.
                     changed = determineGenotype(reads, markerToLabelsAndSlipp[thisMarker].i2+pnToSize[PnId], genotypesToConsider, numOfAlleles, thisMarker.motif.size(), geomP, posSlippProb, negSlippProb, thisMarker);
-                    Pair<bool> alleleConfidence = genotypeIsConfident(changed.i1);
+                    changed.i1.alleleToFreq = PnAndMarkerToGenotype[Pair<string,Marker>(PnId,thisMarker)].alleleToFreq;
+                    Triple<bool> alleleConfidence = genotypeIsConfident(changed.i1);
+                    changed.i1.hasManyAlleles = alleleConfidence.i3;
                     if (alleleConfidence.i1)
                         markerToTrueAlleles[thisMarker].insert(changed.i1.genotype.i1);
                     if (alleleConfidence.i2)
                         markerToTrueAlleles[thisMarker].insert(changed.i1.genotype.i2);
-                    if (changed.i2.i1)
+                    if (changed.i2)
                         ++updatedPns;
                     relabelReads(currentMarker, i-length(reads), i, changed.i1.genotype, thisMarker);
                     PnAndMarkerToGenotype[Pair<string,Marker>(PnId,thisMarker)] = changed.i1;
                     markerToAlleles[thisMarker].insert(changed.i1.genotype.i1);
                     markerToAlleles[thisMarker].insert(changed.i1.genotype.i2);
-                    ++markerToAlleleFreqs[thisMarker].i1[changed.i1.genotype.i1];
-                    ++markerToAlleleFreqs[thisMarker].i1[changed.i1.genotype.i2];
                     //If I am estimating the marker slippage then I should update map from Pn to labels. (before I update PnId to currentMarker[i].PnId)
                     if (loops>1)
                         eraseBack(pnToLabels[PnId]);
@@ -1407,22 +1534,19 @@ int main(int argc, char const ** argv)
             }
             genotypesToConsider = makeGenotypes(allelesToConsider, thisMarker.refRepeatNum).genotypes;
             changed = determineGenotype(reads, markerToLabelsAndSlipp[thisMarker].i2+pnToSize[PnId], genotypesToConsider, numOfAlleles, thisMarker.motif.size(), geomP, posSlippProb, negSlippProb, thisMarker);
-            Pair<bool> alleleConfidence = genotypeIsConfident(changed.i1);
+            changed.i1.alleleToFreq = PnAndMarkerToGenotype[Pair<string,Marker>(PnId,thisMarker)].alleleToFreq;
+            Triple<bool> alleleConfidence = genotypeIsConfident(changed.i1);
+            changed.i1.hasManyAlleles = alleleConfidence.i3;
             if (alleleConfidence.i1)
                 markerToTrueAlleles[thisMarker].insert(changed.i1.genotype.i1);
             if (alleleConfidence.i2)
                 markerToTrueAlleles[thisMarker].insert(changed.i1.genotype.i2);
-            if (changed.i2.i1)
+            if (changed.i2)
                 ++updatedPns;
             relabelReads(currentMarker, length(currentMarker)-length(reads), length(currentMarker), changed.i1.genotype, thisMarker);
             PnAndMarkerToGenotype[Pair<string,Marker>(PnId,thisMarker)] = changed.i1;
-            if (changed.i2.i2 || !changed.i2.i2)
-            {
-                markerToAlleles[thisMarker].insert(changed.i1.genotype.i1);
-                markerToAlleles[thisMarker].insert(changed.i1.genotype.i2);
-            }
-            ++markerToAlleleFreqs[thisMarker].i1[changed.i1.genotype.i1];
-            ++markerToAlleleFreqs[thisMarker].i1[changed.i1.genotype.i2];
+            markerToAlleles[thisMarker].insert(changed.i1.genotype.i1);
+            markerToAlleles[thisMarker].insert(changed.i1.genotype.i2);
             if (loops>1)
                 eraseBack(pnToLabels[PnId]);
             append(pnToLabels[PnId],Pair<float>(changed.i1.genotype.i1, changed.i1.genotype.i2));
@@ -1439,14 +1563,17 @@ int main(int argc, char const ** argv)
             ++z;
             continue;
         }
+        /*else
+        {
+            for (auto const & allele : markerToTrueAlleles[thisMarker])
+                cout << allele << "\t";
+            cout << "\n";
+        }*/
         //Make a Pair<std::set<Pair<float> > String<Pair<float> > > which contains a list and set of genotypes
         //cout << "Number of verified alleles: " << markerToTrueAlleles[thisMarker].size() << endl;
         genotypesAtThisMarker = makeGenotypes(markerToTrueAlleles[thisMarker], thisMarker.refRepeatNum);
-        //cout << "Number of available genotypes: " << genotypesAtThisMarker.genotypesSet.size() << endl;
-        //Compute abs(allele1-allele2)*allele1Freq*allele2Freq for all genotypes and return average of those, estimate of distance between alleles.
-        //alleleDistance = computeAlleleDist(genotypesAtThisMarker.genotypes, markerToAlleleFreqs[it->first].i1, PnsAtMarker);
         //First fill marker specific fields of vcfRecord
-        record = fillRecordMarker(thisMarker, markerToTrueAlleles[thisMarker]);
+        record = fillRecordMarker(thisMarker, markerToTrueAlleles[thisMarker], markerToSlippStuttAndRefSeq);
         //cout << "Finished call to fillRecordMarker." << endl;
         //Loop over Pns and fill in PN specific fields of vcfRecord for each PN
         for (unsigned i = 0; i<length(PnIds); ++i)
@@ -1457,6 +1584,14 @@ int main(int argc, char const ** argv)
             {
                 genotype = PnAndMarkerToGenotype[Pair<string,Marker>(thisPn, thisMarker)];
                 fillRecordPn(genotype, record, genotypesAtThisMarker, markerToTrueAlleles[thisMarker], thisMarker);
+                if (PnAndMarkerToGenotype[Pair<string,Marker>(thisPn, thisMarker)].alleleToFreq.size() > 2)
+                {
+                    for (auto const allele : PnAndMarkerToGenotype[Pair<string,Marker>(thisPn, thisMarker)].alleleToFreq)
+                    {
+                        if (allele.first != genotype.genotype.i1 && allele.first != genotype.genotype.i2)
+                            markerToReadStats[thisMarker][3] += PnAndMarkerToGenotype[Pair<string,Marker>(thisPn, thisMarker)].alleleToFreq[allele.first];
+                    }
+                }
                 PnAndMarkerToGenotype.erase(Pair<string,Marker>(thisPn, thisMarker));
             }
             //If a decision has not been made I add a CharString with no decision(0:0,0,0,0....etc) to the set to maintain order of Pns vs genotypeInfos in output
@@ -1467,8 +1602,8 @@ int main(int argc, char const ** argv)
                 for (unsigned i=0; i<markerToTrueAlleles[thisMarker].size(); ++i)
                     append(gtInfo,"0,");
                 eraseBack(gtInfo);
-                //Adding read depth zero
-                append(gtInfo,":0:");
+                //Adding read depth zero and gq zero
+                append(gtInfo,":0:0:");
                 //Adding phred likelihood zeros
                 for (unsigned i=0; i<length(genotypesAtThisMarker.genotypes); ++i)
                     append(gtInfo,"0,");
@@ -1476,14 +1611,13 @@ int main(int argc, char const ** argv)
                 appendValue(record.genotypeInfos, gtInfo);
             }
         }
+        fillRecordReadStats(record, thisMarker);
         ss << markerToAlleles[thisMarker].size();
         str = ss.str();
-        record.filter = ".";
         stringClear(ss,str);
         //After adding info for all PNs at thisMarker I write the record to the vcf output file
         writeRecord(out, record);
         clear(record);
-        markerToAlleleFreqs[thisMarker].i2 = PnsAtMarker;
         PnToAlleles.clear();
         markerSlippageOut << thisMarker.chrom << "\t" << thisMarker.start << "\t" << thisMarker.end << "\t" << thisMarker.motif << "\t" << thisMarker.refRepeatNum << "\t" << setprecision(4) << fixed << markerToLabelsAndSlipp[thisMarker].i2 << "\t" << geomP << "\t" << nAvailable<< endl;
         //cout << thisMarker.start << " totalSlipp: " << setprecision(4) << fixed << markerToLabelsAndSlipp[thisMarker].i2 << endl;
