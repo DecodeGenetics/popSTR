@@ -29,9 +29,9 @@ with open(original_markers_file, 'r') as om_file:
     with open(augmented_markers_file, 'w') as am_file:
         for line in om_file:
             line = line.split()
-            refBf = line[5]
-            refAf = line[6]
-            repeatSeq = line[7]
+            refBf = line[4]
+            refAf = line[5]
+            repeatSeq = line[6]
             nBasesRequiredBf = checkBf(refBf, repeatSeq)
             #if nBasesRequiredBf > 4:
                 #print 'Require ' + str(nBasesRequiredBf) + ' before marker at ' + line[1]
