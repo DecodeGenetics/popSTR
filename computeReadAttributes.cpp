@@ -94,6 +94,7 @@ struct ReadInfo {
     float ratioOver20In;
     unsigned mateEditDist;
     CharString repSeq; //Repeat sequence in read
+    CharString readName;
 } ;
 
 //structure to store read information
@@ -106,6 +107,7 @@ struct ReadPairInfo {
     float ratioOver20In;
     unsigned mateEditDist;
     CharString repSeq; //Repeat sequence in read
+    CharString readName;
 } ;
 
 } // namespace computeReadAttributes
@@ -644,7 +646,7 @@ Pair<Triple<CharString, CharString, int>,ReadInfo> computeReadInfo(BamAlignmentR
     /*cout << "Read purity: " << readPurity << "\n";
     cout << "Reference purity: " << refRepPurity << "\n";
     cout << "Purity minimum: " << purityDemands[motifLength-1].i1 << "*" << refRepPurity << "=" << purityDemands[motifLength-1].i1*refRepPurity << "\n";*/
-    if (readPurity <= purityDemands[motifLength-1].i1*refRepPurity)
+    if (readPurity < purityDemands[motifLength-1].i1*refRepPurity)
     {
         //cout << "Failing read purity check" << endl;
         coordinates.i1.i1 = startCoord;
@@ -1091,7 +1093,7 @@ int main(int argc, char const ** argv)
 {
     time_t begin = time(0);
     //Check arguments.
-    if (argc != 10)
+    if (argc != 10 && argc != 11)
     {
         cerr << "USAGE: " << argv[0] << " bamFiles outputDirectory markerInfoFile minFlankLength maxRepeatLength chrom reference expansions jumpToExpansions[Y/N]\n";
         return 1;
@@ -1101,6 +1103,8 @@ int main(int argc, char const ** argv)
     //Store parameters
     CharString bamListFile = argv[1], markerInfoFile = argv[3], attributeDirectory = argv[2], chrom = argv[6], expansionFile = argv[8];
     const char* reference = argv[7];
+    if (strlen(reference) == 1)
+        reference = "";
     bool jumpAround = false;
     string arg9 = argv[9];
     if (arg9 == "Y")
@@ -1185,7 +1189,7 @@ int main(int argc, char const ** argv)
 
         if (!setRegion(hts_file, toCString(markers[0].chrom), jumpStart, jumpEnd))
         {
-            cerr << "ERROR: Could not jump to " << markers[0].chrom << ":" << 0 << "\n";
+            cerr << "ERROR: Could not jump to " << markers[0].chrom << ":" << jumpStart << "-" << jumpEnd << "\n";
             return 1;
         }
 
@@ -1250,6 +1254,8 @@ int main(int argc, char const ** argv)
                     if (pos != std::string::npos)
                     {
                         keyValuePair = setReference(record, markers[currentMarker], pos);
+                        if (argc == 11)
+                            keyValuePair.i2.readName = record.qName;
                         if (myMap.count(keyValuePair.i1) == 0)
                         {
                             keyValuePair.i2.mateEditDist = 666;
@@ -1282,6 +1288,8 @@ int main(int argc, char const ** argv)
                         if (((endCoordinate-startCoordinate+1 < readLength-2*minFlank) && (endCoordinate > startCoordinate)) || ((endCoordinate > startCoordinate)&&(getPurity(markers[currentMarker].motif, keyValuePair.i2.repSeq)>0.75*markers[currentMarker].refRepPurity)))
                         {
                             keyValuePair = computeReadInfo(record, markers[currentMarker], coordinates, minFlank, maxRepeatLength);
+                            if (argc == 11)
+                                keyValuePair.i2.readName = record.qName;
                             if (myMap.count(keyValuePair.i1) == 0)
                             {
                                 if (keyValuePair.i2.numOfRepeats == 666)
@@ -1322,6 +1330,8 @@ int main(int argc, char const ** argv)
                     if (myMap.count(mapKey) == 0)
                         myMap[mapKey].numOfRepeats = 666;
                     myMap[mapKey].mateEditDist = getTagValue(record, "NM");
+                    if (argc == 11)
+                        myMap[mapKey].readName = record.qName;
                     ++currentMarker;
                     //If I've reached the end of the marker string I break this loop and take the next read
                     if (currentMarker > finalMarkerIdx)
@@ -1340,6 +1350,8 @@ int main(int argc, char const ** argv)
                         if (myMap.count(mapKey) == 0)
                             myMap[mapKey].numOfRepeats = 666;
                         myMap[mapKey].mateEditDist = getTagValue(record, "NM");
+                        if (argc == 11)
+                            myMap[mapKey].readName = record.qName;
                         ++currentMarker;
                         //If I've reached the end of the marker string I break this loop and take the next read
                         if (currentMarker > finalMarkerIdx)
@@ -1361,6 +1373,8 @@ int main(int argc, char const ** argv)
                         if (((endCoordinate-startCoordinate+1 < length(record.seq)-2*minFlank) && (endCoordinate > startCoordinate)) || ((endCoordinate > startCoordinate)&&(getPurity(markers[currentMarker].motif, keyValuePair.i2.repSeq)>0.75*markers[currentMarker].refRepPurity)))
                         {
                             keyValuePair = computeReadInfo(record, markers[currentMarker], coordinates, minFlank, maxRepeatLength);
+                            if (argc == 11)
+                                keyValuePair.i2.readName = record.qName;
                             if (myMap.count(keyValuePair.i1) == 0)
                             {
                                 keyValuePair.i2.mateEditDist = 666;
@@ -1417,6 +1431,8 @@ int main(int argc, char const ** argv)
                                 keyValuePair.i2.repSeq = infix(mateAtRepeat.seq, startCoordinate, endCoordinate);
                                 keyValuePair.i2.purity = getPurity(markers[currentMarker].motif, keyValuePair.i2.repSeq);
                                 keyValuePair.i2.ratioOver20In = findRatioOver20(keyValuePair.i2.repSeq);
+                                if (argc == 11)
+                                    keyValuePair.i2.readName = mateAtRepeat.qName;
                                 myMap[keyValuePair.i1] = keyValuePair.i2;
                                 ++currentMarker;
                                 //If I've reached the end of the marker string I break this loop and take the next read
@@ -1449,6 +1465,8 @@ int main(int argc, char const ** argv)
                                     reverseComplement(keyValuePair.i2.repSeq);
                                     keyValuePair.i2.purity = getPurity(markers[currentMarker].motif, keyValuePair.i2.repSeq);
                                     keyValuePair.i2.ratioOver20In = findRatioOver20(keyValuePair.i2.repSeq);
+                                    if (argc == 11)
+                                        keyValuePair.i2.readName = mateAtRepeat.qName;
                                     myMap[keyValuePair.i1] = keyValuePair.i2;
                                     ++currentMarker;
                                     //If I've reached the end of the marker string I break this loop and take the next read
@@ -1475,6 +1493,8 @@ int main(int argc, char const ** argv)
                             keyValuePair.i2.repSeq = std::string(readLength, 'N');
                             keyValuePair.i2.purity = 0.5;
                             keyValuePair.i2.ratioOver20In = findRatioOver20(record.seq);
+                            if (argc == 11)
+                                keyValuePair.i2.readName = record.qName;
                             myMap[keyValuePair.i1] = keyValuePair.i2;
                             ++currentMarker;
                             //If I've reached the end of the marker string I break this loop and take the next read
@@ -1524,6 +1544,8 @@ int main(int argc, char const ** argv)
             currentReadPair.ratioOver20In = it->second.ratioOver20In;
             currentReadPair.mateEditDist = it->second.mateEditDist;
             currentReadPair.repSeq = it->second.repSeq;
+            if (argc == 11)
+                currentReadPair.readName = it->second.readName;
             //Put the lime in the coconut
             appendValue(finalMap[currentSTR].i3, currentReadPair);
             finalMap[currentSTR].i1.insert(currentReadPair.numOfRepeats);
@@ -1601,7 +1623,10 @@ int main(int argc, char const ** argv)
                 if (printMe.numOfRepeats < 0)
                     continue;
                 //Print attributes to output file.
-                fprintf(startAndEndToStreamAndOffsets[mapKey].i2,"%.1f\t%.1f\t%.1f\t%u\t%u\t%.2f\t%.2f\t%s\n",printMe.numOfRepeats,printMe.ratioBf,printMe.ratioAf,printMe.locationShift,printMe.mateEditDist,printMe.purity,printMe.ratioOver20In,toCString(printMe.repSeq));
+                if (argc == 11)
+                    fprintf(startAndEndToStreamAndOffsets[mapKey].i2,"%s\t%.1f\t%.1f\t%.1f\t%u\t%u\t%.2f\t%.2f\t%s\n",toCString(printMe.readName),printMe.numOfRepeats,printMe.ratioBf,printMe.ratioAf,printMe.locationShift,printMe.mateEditDist,printMe.purity,printMe.ratioOver20In,toCString(printMe.repSeq));
+                else
+                    fprintf(startAndEndToStreamAndOffsets[mapKey].i2,"%.1f\t%.1f\t%.1f\t%u\t%u\t%.2f\t%.2f\t%s\n",printMe.numOfRepeats,printMe.ratioBf,printMe.ratioAf,printMe.locationShift,printMe.mateEditDist,printMe.purity,printMe.ratioOver20In,toCString(printMe.repSeq));
             }
         }
         //Flush last stream before starting next PN
