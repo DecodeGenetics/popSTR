@@ -1,4 +1,10 @@
 #!/bin/bash
+set -e
+set -o pipefail
+if [[ "$#" -ne 2 ]]; then
+  echo "Usage: runPerChrom.sh <bamList> <reference>"
+  exit 1
+fi
 BAMLIST=$1
 REFERENCE=$2
 CODE_DIR=`dirname $0`
@@ -17,4 +23,4 @@ mkdir -p vcfs
 
 #run msGenotyper
 echo "${CODE_DIR}/popSTR msGenotyperDefault -ADCN ./attributes/chr21 -PNS pnSlippage -MS markerSlippageChr21 -VD ./vcfs -VN chr21_small -ML <(cut -d ' ' -f 1,2,3,4,12,13 ${CODE_DIR}/kernel/kernelMarkersInfo) -I 0 -FP 1"
-${CODE_DIR}/popSTR msGenotyperDefault -ADCN ./attributes/chr21 -PNS pnSlippage -MS markerSlippageChr21 -VD ./vcfs -VN chr21_small -ML <(cut -d ' ' -f 1,2,3,4,12,13 ${CODE_DIR}/kernel/kernelMarkersInfo) -I 0 -FP 1
+${CODE_DIR}/popSTR msGenotyperDefault -ADCN ./attributes/chr21 -PNS pnSlippage -MS markerSlippageChr21 -VD ./vcfs -VN chr21_small -ML <(cut -d ' ' -f 1,2,3,4,8,12,13 ${CODE_DIR}/kernel/kernelMarkersInfo) -I 0 -FP 1
