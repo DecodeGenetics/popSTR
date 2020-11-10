@@ -1,8 +1,8 @@
 #include <iostream>
-#include <seqan/file.h>
-#include <seqan/align.h>
-#include <seqan/sequence.h>
-#include <seqan/seq_io.h>
+#include <SeqAnHTS/include/seqan/file.h>
+#include <SeqAnHTS/include/seqan/align.h>
+#include <SeqAnHTS/include/seqan/sequence.h>
+#include <SeqAnHTS/include/seqan/seq_io.h>
 #include <fstream>
 
 using namespace std;
