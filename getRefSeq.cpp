@@ -1,7 +1,7 @@
 #include <iostream>
-#include <seqan/sequence.h>
-#include <seqan/seq_io.h>
-#include <seqan/stream.h>
+#include <SeqAnHTS/include/seqan/sequence.h>
+#include <SeqAnHTS/include/seqan/seq_io.h>
+#include <SeqAnHTS/include/seqan/stream.h>
 
 using namespace std;
 using namespace seqan;
@@ -72,26 +72,64 @@ int main(int argc, char const ** argv)
             endPos = sequenceLength(faiIndex, idx);
         if (beginPos > endPos)
             endPos = beginPos;
+        if (beginPos==0 && endPos==0)
+        {
+            cout << "both positions are 0 " << beginPos << "-" << endPos << "\n";
+            return 0;
+        }
+        if (abs(round(refRepeatNum*motifString.length()) - (endPos-beginPos+1)) > 1)
+        {
+            cout << "new region is not equal in length to old for " << chromString << ":" << beginPos << "-" << endPos << "\n";
+            markerFile >> chromString;
+            continue;
+        }
         //Get 1000 bases infront of marker from reference
         readRegion(refBf, faiIndex, idx, max(0,beginPos-1001), beginPos-1);
         if (length(refBf) != 1000)
         {
-            cerr << "ERROR: Could not load reference before.\n";
-            return 1;
+            if (beginPos > 1001)
+            {
+                cerr << "ERROR: Could not load reference before for " << chromString << ":" << beginPos << "-" << endPos << "\n";
+                markerFile >> chromString;
+                continue;
+            }
+            else
+            {
+                if (length(refBf) < beginPos -1)
+                {
+                    cerr << "ERROR: Could not load reference before for " << chromString << ":" << beginPos << "-" << endPos << "\n";
+                    markerFile >> chromString;
+                    continue;
+                }
+            }
         }
         //Get repeat sequence from reference
         readRegion(refRepSeq, faiIndex, idx, beginPos-1, endPos);
         if (!length(refRepSeq) > 0)
         {
-            cerr << "ERROR: Could not load repeat sequence.\n";
-            return 1;
+            cerr << "ERROR: Could not load repeat sequence for " << chromString << ":" << beginPos << "-" << endPos << "\n";
+            markerFile >> chromString;
+            continue;
         }
         //Get 1000 bases behind marker from reference
         readRegion(refAf, faiIndex, idx, endPos, min(LengthOfSeq,endPos+1000));
         if (length(refAf) != 1000)
         {
-            cerr << "ERROR: Could not load reference after.\n";
-            return 1;
+            if (endPos+1000 < LengthOfSeq)
+            {
+                cerr << "ERROR: Could not load reference after for " << chromString << ":" << beginPos << "-" << endPos << "\n";
+                markerFile >> chromString;
+                continue;
+            }
+            else
+            {
+                if (length(refAf) < LengthOfSeq - endPos)
+                {
+                    cerr << "ERROR: Could not load reference before for " << chromString << ":" << beginPos << "-" << endPos << "\n";
+                    markerFile >> chromString;
+                    continue;
+                }
+            }
         }
         outputFile << chromString << "\t" << beginPos << "\t" << endPos << "\t" << motifString << "\t" << refRepeatNum << "\t" << refBf << "\t" << refAf << "\t" << refRepSeq << endl;
         markerFile >> chromString;
