@@ -1156,7 +1156,7 @@ int main(int argc, char const ** argv)
     if (length(markers)==0)
     {
         cerr << "The markerInfo file is empty, please supply a file containing at least one marker.\n";
-        return 1;
+        return 0;
     }
     cout << "Finished reading marker Info, number of markers: " << length(markers) << "\n";
     unsigned finalMarkerIdx = length(markers) - 1;
@@ -1640,6 +1640,8 @@ int main(int argc, char const ** argv)
     //Loop over marker map and write offset vector to the beginning of each file
     for (auto& marker: startAndEndToStreamAndOffsets)
     {
+        //Start by flushing the marker stream to make sure all attributes are printed
+        fflush(marker.second.i2);
         //Find index of first pn with available reads
         unsigned idx = 0;
         while (idx < length(marker.second.i1) && marker.second.i1[idx] == 0)
@@ -1656,10 +1658,11 @@ int main(int argc, char const ** argv)
         {
             fprintf(marker.second.i2, "%u ", marker.second.i1[i]);
             fflush(marker.second.i2);
-            //Chech if I am writing passed the reserved space at front
+            //Check if I am writing passed the reserved space at front
             if (ftell(marker.second.i2) > marker.second.i1[idx])
             {
                 cerr << "writing pn-offsets over pnData @: " << marker.first.i1 << endl;
+                cerr << "Start of first PN attributes: " << marker.second.i1[idx] << endl; 
                 cerr << "Pn idx: " << i << " and offset: " << marker.second.i1[i] << endl;
                 return 1;
             }
