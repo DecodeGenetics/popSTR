@@ -51,7 +51,7 @@ Parameters:
 * `outputDirectory` - A folder called attributes will be created in the directory if it doesn't exist. A folder called [chrom] (last parameter above) will be created in the attributes folder if it doesn't exist. One file will be created per marker, located at [outputDirectory]/attributes/[chrom]/[start]_[motif] where start is the start coordinate of the marker and motif is the marker's repeat motif.
 * `markerInfoFile` - A file listing the markers to be genotyped, must only contain markers from one chromosome. Marker files for chr1-ch22 are provided. Format for markerInfoFile:
 
-        chrom startCoordinate endCoordinate repeatMotif numOfRepeatsInRef 1000refBasesBeforeStart 1000refBasesAfterEnd repeatSeqFromRef minFlankLeft minFlankRight repeatPurity fractionAinMotif fractionCinMotif fractionGinMotif fractionTinMotif
+        chrom startCoordinate endCoordinate repeatMotif numOfRepeatsInRef 1000refBasesBeforeStart 1000refBasesAfterEnd repeatSeqFromRef minFlankLeft minFlankRight repeatPurity defaultSlippage defaultStutter fractionAinMotif fractionCinMotif fractionGinMotif fractionTinMotif
 
 * `minFlankLength` - Minimum number of flanking bases required on each side of a repeat for a read to be considered useful.
 * `maxRepeatLength` - All alleles with a basePair length above this number will be lumped together into a greater than allele. Should be set close to 0.5 * readLength in IN.bam.
