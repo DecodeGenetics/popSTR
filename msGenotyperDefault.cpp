@@ -581,9 +581,9 @@ void makeVcfHeader(VcfFileOut& out, String<string> & PnIds, string chrom, string
     VcfHeader header;
     appendValue(header, VcfHeaderRecord("fileformat", "VCFv4.2"));
     appendValue(header, VcfHeaderRecord("fileDate", date));
-    appendValue(header, VcfHeaderRecord("source", "PopSTR"));
-    appendValue(header, VcfHeaderRecord("source_bin", computeReadAttsPath));
-    appendValue(header, VcfHeaderRecord("source_bin", pnSlippPath));
+    //appendValue(header, VcfHeaderRecord("source", "PopSTR"));
+    //appendValue(header, VcfHeaderRecord("source_bin", computeReadAttsPath));
+    //appendValue(header, VcfHeaderRecord("source_bin", pnSlippPath));
     appendValue(header, VcfHeaderRecord("source_bin", binPath));
     appendValue(header, VcfHeaderRecord("reference", "/odinn/data/reference/Homo_sapiens-deCODE-hg38/Sequence/WholeGenomeFasta/genome.fa"));
     appendValue(header, VcfHeaderRecord("contig", contigString));
@@ -1112,7 +1112,7 @@ int main(int argc, char const ** argv)
     if (markerToSlippStuttAndRefSeq.size() == 0)
     {
         cerr << "Failed to read any markers to genotype." << endl;
-        return 1;
+        return 0;
     }
     cout << "Number of markers: " << markerToSlippStuttAndRefSeq.size() << "\n";
     //Map from marker to all reads covering it
@@ -1211,7 +1211,7 @@ int main(int argc, char const ** argv)
                         enoughReads = false;
                     }
                     //Parse all reads collected and add to map
-                    cout << "Parsing " << length(currentReadList) << " for " << PnId << endl;
+                    //cout << "Parsing " << length(currentReadList) << " for " << PnId << endl;
                     for (auto read : currentReadList)
                     {
                         currentLine = parseNextLine(read, winnerSecond, enoughReads, marker, PnId, PnAndMarkerToGenotype);
@@ -1256,7 +1256,7 @@ int main(int argc, char const ** argv)
                 }
             }
             if (numberOfWordsAndWords.i1 != 1 && numberOfWordsAndWords.i1 != 8)
-                cerr << "Format error in attribute file!" << endl;
+                cerr << "Format error in attribute file: " << attributePath << endl;
         }
         //Be careful to process last PN
         for (auto const & allele : PnAndMarkerToGenotype[Pair<string,Marker>(PnId, marker)].alleleToFreq)
@@ -1286,7 +1286,7 @@ int main(int argc, char const ** argv)
             enoughReads = false;
         }
         //Parse all reads collected and add to map
-        cout << "Parsing " << length(currentReadList) << " for " << PnId << endl;
+        //cout << "Parsing " << length(currentReadList) << " for " << PnId << endl;
         for (auto read : currentReadList)
         {
             currentLine = parseNextLine(read, winnerSecond, enoughReads, marker, PnId, PnAndMarkerToGenotype);
