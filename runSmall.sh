@@ -2,7 +2,7 @@
 set -e
 set -o pipefail
 if [[ "$#" -ne 2 ]]; then
-  echo "Usage: runPerChrom.sh <bamList> <reference>"
+  echo "Usage: runSmall.sh <bamList> <reference>"
   exit 1
 fi
 BAMLIST=$1
@@ -14,8 +14,8 @@ echo "${CODE_DIR}/popSTR computeReadAttributes ${BAMLIST} . <(cut -d ' ' -f 1-11
 ${CODE_DIR}/popSTR computeReadAttributes ${BAMLIST} . <(cut -d ' ' -f 1-11,14- ${CODE_DIR}/kernel/kernelMarkersInfo) 8 135 chr21 ${REFERENCE} ${CODE_DIR}/markerInfo/longRepeats N
 
 #Compute pnSlippage for samples in BAMLIST
-echo "${CODE_DIR}/popSTR computePnSlippageDefault -PL <(awk '{print $1}' $BAMLIST) -AD ./attributes/chr21 -OF pnSlippage -FP 1 -MS ${CODE_DIR}/kernel/kernelSlippageRates -MD ${CODE_DIR}/kernel/kernelModels"
-${CODE_DIR}/popSTR computePnSlippageDefault -PL <(awk '{print $1}' $BAMLIST) -AD ./attributes/chr21 -OF pnSlippage -FP 1 -MS ${CODE_DIR}/kernel/kernelSlippageRates -MD ${CODE_DIR}/kernel/kernelModels
+echo "${CODE_DIR}/popSTR computePnSlippageDefault -PL <(cat $BAMLIST | tr '\t' ' ' | sed 's/ .*//') -AD ./attributes/chr21 -OF pnSlippage -FP 1 -MS ${CODE_DIR}/kernel/kernelSlippageRates -MD ${CODE_DIR}/kernel/kernelModels"
+${CODE_DIR}/popSTR computePnSlippageDefault -PL <(cat $BAMLIST | tr '\t' ' ' | sed 's/ .*//') -AD ./attributes/chr21 -OF pnSlippage -FP 1 -MS ${CODE_DIR}/kernel/kernelSlippageRates -MD ${CODE_DIR}/kernel/kernelModels
 
 #make directory for vcf files
 echo "mkdir -p vcfs"
