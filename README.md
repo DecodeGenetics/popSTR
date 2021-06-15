@@ -20,7 +20,9 @@
 
 4.Run install script `install.sh`
 
-5.[Optional] To make sure installation succeeded, execute runSmall.sh with a bamList(described below) and path to reference: `runSmall.sh bamList reference`
+5.Run setup script: `setUp.sh`
+
+6.[Optional] To make sure installation succeeded, execute runSmall.sh with a bamList(described below) and path to reference: `runSmall.sh bamList reference`
 This will genotype the samples in `bamList` over a set of markers from chr21 and write the results to `./vcfs/chr21_small_0.vcf`. Two other files `pnSlippage` and `markerSlippageChr21_0` are also generated. `pnSlippage` contains slippage rates for all samples in `bamList` and `markerSlippageChr21_0` contains slippage and stutter rates for the genotyped markers.
 
 ## Running popSTR
