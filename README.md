@@ -1,6 +1,6 @@
 # PopSTR - A Population based microsatellite genotyper
 
-Pre-step: Install dependencies (if not present) deps.sh
+Pre-step: Install dependencies (if not present) `deps.sh`
 
 ## Downloading release with static binary
 
