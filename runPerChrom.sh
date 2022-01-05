@@ -1,8 +1,8 @@
 #!/bin/bash
 set -e
 set -o pipefail
-if [[ "$#" -ne 4 ]]; then
-  echo "Usage: runPerChrom.sh <bamList> <reference> <chrom> <markersPerJob>"
+if [[ "$#" -ne 5 ]]; then
+  echo "Usage: runPerChrom.sh <bamList> <reference> <chrom> <markersPerJob> <nCores>"
   exit 1
 fi
 
@@ -10,6 +10,7 @@ BAMLIST=$1
 REFERENCE=$2
 CHROM=$3
 MARKERS_PER_JOB=$4
+N_CORES=$5
 CODE_DIR=`dirname $0`
 CURR_DIR=`pwd`
 
@@ -32,7 +33,7 @@ do
         headNum=`expr ${i} \* ${MARKERS_PER_JOB}`
         echo "${CODE_DIR}/popSTR computeReadAttributes ${BAMLIST} ${CURR_DIR} <(head -n ${headNum} ${CODE_DIR}/markerInfo/${CHROM}markerInfo | tail -n ${MARKERS_PER_JOB} | cut -d ' ' -f 1-11,14-) 8 135 ${CHROM} ${REFERENCE} ${CODE_DIR}/markerInfo/longRepeats N"
     fi
-done | parallel
+done | parallel -j $N_CORES
 
 #check if pnSlippage has been computed
 pnSlippageFile=${CURR_DIR}/pnSlippage
@@ -62,7 +63,7 @@ do
         headNum=`expr ${i} \* ${MARKERS_PER_JOB}`
         echo "${CODE_DIR}/popSTR msGenotyperDefault -ADCN ${CURR_DIR}/attributes/${CHROM} -PNS pnSlippage -MS markerSlippage${CHROM} -VD ${CURR_DIR}/vcfs -VN ${CHROM} -ML <(cut -d ' ' -f 1,2,3,4,8,12,13 ${CODE_DIR}/markerInfo/${CHROM}markerInfo | head -n ${headNum} | tail -n ${MARKERS_PER_JOB}) -I ${i} -FP 1"
     fi
-done | parallel
+done | parallel -j $N_CORES
 
 #merge vcf files
 echo "Merging vcf files"
