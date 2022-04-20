@@ -466,8 +466,8 @@ Pair<Triple<CharString, CharString, int>,ReadInfo> computeReadInfo(BamAlignmentR
     mapValue.motif = markerInfo.motif;
     mapValue.refRepeatNum = markerInfo.refRepeatNum;
 
-    int scoreBf, scoreAf, startCoord, endCoord, leftFlank, rightFlank;
-    float rBf, rAf;
+    int scoreBf = 0, scoreAf = 0, startCoord = 0, endCoord = 0, leftFlank = 0, rightFlank = 0;
+    float rBf = 0.0, rAf = 0.0;
     //check if 8-mer in front of and behind repeat in read match reference with edit-distance max 1
     //This is the best case scenario, then I skip flanking alignment
     before_8 = infix(record.seq, max(0,coordinates.i1.i1-8), coordinates.i1.i1);
@@ -1560,8 +1560,8 @@ int main(int argc, char const ** argv)
         //Set for storing allele-types and vector for storing reported alleles, count occurences in vector for all elements in set to get frequency of each allele
         std::set<float> presentAlleles;
         vector<float> allAlleles;
-        int winnerFreq, secondFreq, currentFreq;
-        float winner, second;
+        int winnerFreq = 0, secondFreq = 0, currentFreq = 0;
+        float winner = 0, second = 0;
         //Loop over map of markers and look at all reads for each of them
         unordered_map<STRinfoSmall, Triple<std::set<float>,vector<float>, String<ReadPairInfo> > >::const_iterator ite2 = finalMap.end();
         unordered_map<STRinfoSmall, Triple<std::set<float>,vector<float>, String<ReadPairInfo> > >::iterator it = finalMap.begin();
@@ -1615,7 +1615,7 @@ int main(int argc, char const ** argv)
             if (secondFreq < 0.10*winnerFreq)
                 second = winner;
             //Write attributes and initial labelling to output file
-            fprintf(startAndEndToStreamAndOffsets[mapKey].i2,"%s\t%u\t%u\t%s\t%.1f\t%u\t%.1f\t%.1f\n",toCString(it->first.chrom),it->first.STRstart,it->first.STRend,toCString(it->first.motif),it->first.refRepeatNum,length(readPairs),winner,second);
+            fprintf(startAndEndToStreamAndOffsets[mapKey].i2,"%s\t%u\t%u\t%s\t%.1f\t%lu\t%.1f\t%.1f\n",toCString(it->first.chrom),it->first.STRstart,it->first.STRend,toCString(it->first.motif),it->first.refRepeatNum,length(readPairs),winner,second);
             for (unsigned i=0; i < length(readPairs); ++i)
             {
                 ReadPairInfo printMe = readPairs[i];
@@ -1656,7 +1656,7 @@ int main(int argc, char const ** argv)
         rewind(marker.second.i2);
         for (unsigned i=0; i<length(marker.second.i1); ++i)
         {
-            fprintf(marker.second.i2, "%u ", marker.second.i1[i]);
+            fprintf(marker.second.i2, "%li ", marker.second.i1[i]);
             fflush(marker.second.i2);
             //Check if I am writing passed the reserved space at front
             if (ftell(marker.second.i2) > marker.second.i1[idx])

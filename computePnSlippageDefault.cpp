@@ -486,7 +486,7 @@ map<string, LabelProps> readPnList(CharString & pnInfoFile)
 
 long int readOffSets(ifstream & attsFile, unsigned firstPnIdx, unsigned nPns)
 {
-    long int offset;
+    long int offset = 0;
     for (unsigned i = 1; i<=firstPnIdx; ++i)
     {
         attsFile >> offset;
@@ -544,18 +544,20 @@ Pair<float> findMostFrequent(std::vector<String<string> > & currentReadList)
     }
     if (secondFreq < 0.10*winnerFreq)
         second = winner;
+
+    return {winner, second};
 }
 
 void readMarkerData(CharString attributesDirectory, Marker marker, map<string, LabelProps>& pnToLabelProps, unsigned firstPnIdx)
 {
     //variables
-    int numberOfReads, nReadsThisBatch, pnsFound = 0;
-    float winner, second, numOfRepeats;
+    int numberOfReads = 0, nReadsThisBatch = 0, pnsFound = 0;
+    float winner = 0, second = 0, numOfRepeats = 0;
     string nextLine, temp, prevPn= "PeterGriffin";
     Pair<int, String<string> > numberOfWordsAndWords;
     AttributeLine currentLine;
     std::vector<String<string> > currentReadList;
-    bool moreThanOneBam;
+    bool moreThanOneBam = false;
     //make input stream
     append(attributesDirectory, "/");
     append(attributesDirectory, to_string(marker.start));

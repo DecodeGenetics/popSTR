@@ -1028,7 +1028,7 @@ Triple<bool> genotypeIsConfident(GenotypeInfo& genotypeInfo)
 
 long int readOffSets(ifstream & attsFile, unsigned firstPnIdx)
 {
-    long int offset;
+    long int offset = 0;
     for (unsigned i = 1; i<=firstPnIdx; ++i)
     {
         attsFile >> offset;
@@ -1045,7 +1045,7 @@ Pair<float> findMostFrequent(std::vector<String<string> > & currentReadList)
     std::set<string> presentAlleles;
     std::vector<string> allAlleles;
     int winnerFreq = 0, secondFreq = 0, currentFreq;
-    float winner, second, fallele;
+    float winner = 0, second = 0, fallele = 0;
     for (auto read : currentReadList)
     {
         presentAlleles.insert(read[0]);
@@ -1078,6 +1078,8 @@ Pair<float> findMostFrequent(std::vector<String<string> > & currentReadList)
     }
     if (secondFreq < 0.10*winnerFreq)
         second = winner;
+
+    return {winner, second};
 }
 
 int main(int argc, char const ** argv)
@@ -1097,8 +1099,8 @@ int main(int argc, char const ** argv)
     string PnId, chrom, motif, nextWord;
     String<string> PnIds;
     std::set<Marker> markers;
-    int start, end, numberOfReads;
-    float refRepeatNum, winner, second;
+    int start = 0, end = 0, numberOfReads = 0;
+    float refRepeatNum = 0, winner = 0, second{};
     //Read the slippage rate for all PNs into the pnToSize map and list of markers to genotype.
     readPnSlippage(options.pnSlippageFile, PnIds);
     if (length(PnIds) == 0)
@@ -1140,7 +1142,7 @@ int main(int argc, char const ** argv)
     Pair<int, String<string> > numberOfWordsAndWords;
     bool moreThanOneBam = false, enoughReads = true;
     //Iterate over all markers in the markerList and read from their attribute files
-    unsigned nProcessedMarkers = 0, processedPns, nReadsThisBatch;
+    unsigned nProcessedMarkers = 0, processedPns = 0, nReadsThisBatch = 0;
     for (auto const & listMarker : markerToSlippStuttAndRefSeq)
     {
         //Make path to attributefile for current marker

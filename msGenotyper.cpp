@@ -805,7 +805,7 @@ String<Pair<int, string> > readMarkers(CharString & markerFile)
 void readMarkerSlippage(CharString markerSlippageFile, CharString iterationNumber, CharString regressionModelDirectory, CharString intervalIndex)
 {
     string prevItNum;
-    int itNum;
+    int itNum = 0;
     lexicalCast(itNum, iterationNumber);
     --itNum;
     prevItNum = to_string(itNum);
@@ -853,7 +853,7 @@ map<string, Pair<double, int> > readPnSlippage(CharString pnSlippagePath, CharSt
     int nMarkers;
     double currPnSlipp;
     string prevItNum;
-    int itNum;
+    int itNum = 0;
     lexicalCast(itNum, iterationNumber);
     --itNum;
     prevItNum = to_string(itNum);
@@ -1032,7 +1032,7 @@ map<string, Pair<float> > readLabels(CharString modelAndLabelDir, Pair<int, stri
     append(modelAndLabelDir, "_");
     append(modelAndLabelDir, marker.i2);
     string prevItNum;
-    int itNum;
+    int itNum = 0;
     lexicalCast(itNum, iterationNumber);
     --itNum;
     prevItNum = to_string(itNum);
@@ -1055,7 +1055,7 @@ map<string, Pair<float> > readLabels(CharString modelAndLabelDir, Pair<int, stri
 
 long int readOffSets(ifstream & attsFile, unsigned firstPnIdx)
 {
-    long int offset;
+    long int offset = 0;
     for (unsigned i = 1; i<=firstPnIdx; ++i)
     {
         attsFile >> offset;

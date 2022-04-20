@@ -19,11 +19,11 @@ CXXFLAGS+=-O3
 LDFLAGS=-O3
 
 #Debug build
-#CXXFLAGS+=-g -O0
-#LDFLAGS=-g -O0
+# CXXFLAGS+=-g -O0
+# LDFLAGS=-g -O0
 
 # set std to c++0x to allow using 'auto' etc.
-CXXFLAGS+=-std=c++0x -DSEQAN_ENABLE_TESTING=0 -DSEQAN_ENABLE_DEBUG=0 -DSEQAN_HAS_ZLIB=1
+CXXFLAGS+=-std=c++0x -DSEQAN_ENABLE_TESTING=0 -DSEQAN_ENABLE_DEBUG=0 -DSEQAN_HAS_ZLIB=1 -Wmaybe-uninitialized
 LDFLAGS+=-pthread -L$(HTSLIB) -Wl,-rpath,$(HTSLIB) -lz -lhts -L$(BOOST_LIB) -Wl,-rpath,$(BOOST_LIB) -lboost_iostreams
 
 all: popSTR

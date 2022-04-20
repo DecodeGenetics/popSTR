@@ -259,7 +259,7 @@ void parseNextLine(float winner, float second, ifstream& attributeFile, Marker& 
 
 long int readOffSets(ifstream & attsFile, unsigned firstPnIdx, unsigned nPns)
 {
-    long int offset;
+    long int offset = 0;
     for (unsigned i = 1; i<=firstPnIdx; ++i)
     {
         attsFile >> offset;
@@ -282,8 +282,8 @@ long int readOffSets(ifstream & attsFile, unsigned firstPnIdx, unsigned nPns)
 void readMarkerData_level2(CharString attributesDirectory, Marker& marker, map <string, Pair<float> >& pnToLabels, map<string, Pair<double, unsigned> >& pnToPrevSlipp, unsigned minNpns, unsigned firstPnIdx)
 {
     //variables
-    int numberOfReads, pnsFound = 0;
-    float winner, second, numOfRepeats;
+    int numberOfReads = 0, pnsFound = 0;
+    float winner = 0, second = 0, numOfRepeats = 0;
     string nextLine, temp;
     Pair<int, String<string> > numberOfWordsAndWords;
     //make input stream
@@ -456,7 +456,7 @@ map<string, Pair<double, unsigned> > readPrevSlipp(CharString & previousSlippage
 {
     CharString filePath = previousSlippageRate;
     string prevIterIdx;
-    int itNum;
+    int itNum = 0;
     lexicalCast(itNum, iterationNumber);
     --itNum;
     prevIterIdx = to_string(itNum);
