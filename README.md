@@ -47,13 +47,13 @@ Is run for a list of samples over a list of markers.
 
 Call:
 
-    computeReadAttributes bamList outputDirectory markerInfoFile minFlankLength maxRepeatLength chrom reference expansions jumpToExpansions[Y/N]
+    computeReadAttributes bamList outputDirectory <(cut -d ' ' -f 1-11,14- markerInfoFile) minFlankLength maxRepeatLength chrom reference expansions jumpToExpansions[Y/N]
 
 Parameters:
 
 * `bamList` - Two column file listing all samples to be genotyped, first column: A sample identifier. Second column: Path to the bam file. (An index (.bai file) for all bam files must exist in the same directory)
 * `outputDirectory` - A folder called attributes will be created in the directory if it doesn't exist. A folder called [chrom] (last parameter above) will be created in the attributes folder if it doesn't exist. One file will be created per marker, located at [outputDirectory]/attributes/[chrom]/[start]_[motif] where start is the start coordinate of the marker and motif is the marker's repeat motif.
-* `markerInfoFile` - A file listing the markers to be genotyped, must only contain markers from one chromosome. Marker files for chr1-ch22 are provided. Format for markerInfoFile:
+* `markerInfoFile` - A file listing the markers to be genotyped, must only contain markers from one chromosome. Marker files for chr1-ch22 are provided. Format for markerInfoFile (cut command removes defaultSlippage and defaultStutter):
 
         chrom startCoordinate endCoordinate repeatMotif numOfRepeatsInRef 1000refBasesBeforeStart 1000refBasesAfterEnd repeatSeqFromRef minFlankLeft minFlankRight repeatPurity defaultSlippage defaultStutter fractionAinMotif fractionCinMotif fractionGinMotif fractionTinMotif
 
