@@ -1415,11 +1415,15 @@ int main(int argc, char const ** argv)
                 clear(reads);
             }
             //Use logistic regression model to get pValue for all reads at marker
-            predict_label = predict_probability(model_,probBig.x[i],prob_estimates);
+	    if (model_) {
+	            predict_label = predict_probability(model_,probBig.x[i],prob_estimates);
+        	    mapPerMarker[thisMarker][i].pValue = prob_estimates[0];
+	    } else {
+		    mapPerMarker[thisMarker][i].pValue = -1;
+	    }
             free(probBig.x[i]);
             if (i<idx)
                 free(prob.x[i]);
-            mapPerMarker[thisMarker][i].pValue = prob_estimates[0];
             appendValue(reads, mapPerMarker[thisMarker][i]);
         }
         free(prob.y);
